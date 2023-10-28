@@ -35,9 +35,10 @@ collaborators:
 
 Please send an email our way with a link to the repo.
 
-
-* Euler Finance
-
-The Euler Finance hack was one of the most significant DeFi hacks of the year. The hack resulted in the loss of over 99% of its $200 million TVL, essentially wiping it out completely.
-This had a domino effect on other protocols such as Angle Protocol and Balance, as reported on https://rekt.news/euler-rekt/.
+* Euler Finance Incident POC
+The hack resulted in the loss of over ~75% of its $264M TVL, and later became utterly REKT (current TVL is only $72k).
+This had a domino effect on other protocols, such as Angle Protocol and Balance, as reported on https://rekt.news/euler-rekt/.
 This repo contains a POC for the hack using reserve engineering technique based on the [[https://medium.com/@omniscia.io/euler-finance-incident-post-mortem-1ce077c28454][Imniscia Euler Finance Incident Post-Mortem]]
+
+The [[https://etherscan.io/tx/0xc310a0affe2169d1f6feec1c63dbc7f7c62a887fa48795d327d4d2da2d6b111d][attack transaction]] step-by-step:
+1. Flashloan 30M DAI from AaveV2
