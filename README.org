@@ -1,0 +1,43 @@
+* Background
+
+This challenge is meant to test your knowledge of EVM / blockchain pitfalls,
+good design patterns, security mindset, and your ability to communicate this
+knowledge in a technical setting.
+It should be doable in a few hours, although you’ll have plenty of time to do
+it within your own availability.
+
+* The Challenge
+Create a smart contract illustrating a particularly interesting vulnerability of
+your choice in an EVM contract. The vulnerability should be representative
+of actual problems that have happened or may happen in real codebases,
+and lead to real consequences such as loss of funds, denial of service, or
+other.
+You can rely on past experience to decide what to do and how to
+demonstrate it, but all the code must be written from scratch. You can still
+rely on general libraries such as OpenZeppelin or solmate
+The contract only needs to implement the bare minimum functionality to
+showcase the exploit.
+The codebase must also include automated test(s) that showcase how to
+take advantage of the exploit. This test must be runnable by the reviewer.
+Please document, either via comments in the code, or in a markdown file,
+your knowledge about the details of the vulnerability: why it is possible, how
+
+it is exploitable, what consequences it causes, and what techniques and
+best practices can usually be done to avoid it.
+
+* Development and submission details
+The project must be submitted as a runnable setup (e.g.: Hardhat or
+Foundry, or other preference you may have), and via a github repo
+If you want to keep it private, add the following github users as
+collaborators:
+● @naps62
+● @CondeGil
+
+Please send an email our way with a link to the repo.
+
+
+* Euler Finance
+
+The Euler Finance hack was one of the most significant DeFi hacks of the year. The hack resulted in the loss of over 99% of its $200 million TVL, essentially wiping it out completely.
+This had a domino effect on other protocols such as Angle Protocol and Balance, as reported on https://rekt.news/euler-rekt/.
+This repo contains a POC for the hack using reserve engineering technique based on the [[https://medium.com/@omniscia.io/euler-finance-incident-post-mortem-1ce077c28454][Imniscia Euler Finance Incident Post-Mortem]]
