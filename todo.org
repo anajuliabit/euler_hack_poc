@@ -1,0 +1,16 @@
+* PROGRESS Code challenge
+:PROPERTIES:
+:Effort:   3:00
+:END:
+** DONE Choose vulnerability
+CLOSED: [2023-10-28 Sat 11:10]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2023-10-28 Sat 12:35]
+CLOCK: [2023-10-28 Sat 10:30]--[2023-10-28 Sat 11:10] =>  0:40
+:END:
+** DONE Research, read post-mortems, etc
+CLOSED: [2023-10-28 Sat 12:37]
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2023-10-28 Sat 11:50]
+CLOCK: [2023-10-28 Sat 11:20]--[2023-10-28 Sat 12:00] =>  0:40
+:END:
