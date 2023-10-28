@@ -21,16 +21,15 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1696410815,
-        "narHash": "sha256-uku47D/L+VzO3sVoZbnexPQPGeQtMwMFBesyaA1vKtE=",
+        "lastModified": 1698484150,
+        "narHash": "sha256-rVBgusytUg8001RJs96tNS3tPyBq9coLjKxJ7KUtw+k=",
         "owner": "shazow",
         "repo": "foundry.nix",
-        "rev": "a56126a754d73f85d904768fed569a9e250388d9",
+        "rev": "47cae0c33c7ec285fe64231663f055f949f2b819",
         "type": "github"
       },
       "original": {
         "owner": "shazow",
-        "ref": "monthly",
         "repo": "foundry.nix",
         "type": "github"
       }
