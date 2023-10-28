@@ -42,3 +42,6 @@ This repo contains a POC for the hack using reserve engineering technique based 
 
 The [[https://etherscan.io/tx/0xc310a0affe2169d1f6feec1c63dbc7f7c62a887fa48795d327d4d2da2d6b111d][attack transaction]] step-by-step:
 1. Flashloan 30M DAI from AaveV2
+
+
+* Tasks
