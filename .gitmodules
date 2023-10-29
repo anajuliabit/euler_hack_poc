@@ -7,3 +7,6 @@
 [submodule "lib/aave-v3-core"]
 	path = lib/aave-v3-core
 	url = https://github.com/aave/aave-v3-core
+[submodule "lib/euler-contracts"]
+	path = lib/euler-contracts
+	url = https://github.com/euler-xyz/euler-contracts

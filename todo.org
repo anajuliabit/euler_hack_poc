@@ -5,7 +5,7 @@
 ** DONE Choose vulnerability
 CLOSED: [2023-10-28 Sat 11:10]
 :LOGBOOK:
-- State "DONE"       from "TODO"       [2023-10-28 Sat 12:35]
+- State "DONE"       from "TODO"       [2023-10-28 Sat 11:10]
 CLOCK: [2023-10-28 Sat 10:30]--[2023-10-28 Sat 11:10] =>  0:40
 :END:
 ** DONE Research, read post-mortems, etc
@@ -15,4 +15,18 @@ CLOCK: [2023-10-28 Sat 10:30]--[2023-10-28 Sat 11:10] =>  0:40
 :LOGBOOK:
 - State "DONE"       from "TODO"       [2023-10-28 Sat 11:50]
 CLOCK: [2023-10-28 Sat 11:20]--[2023-10-28 Sat 12:00] =>  0:40
+:END:
+** PROGRESS Work on POC
+:PROPERTIES:
+:Effort:   2:00
+:END:
+:LOGBOOK:
+CLOCK: [2023-10-29 Sun 19:21]--[2023-10-29 Sun 20:01] =>  0:40
+CLOCK: [2023-10-29 Sun 11:55]--[2023-10-29 Sun 12:35] =>  0:40
+CLOCK: [2023-10-29 Sun 11:09]--[2023-10-29 Sun 11:49] =>  0:40
+CLOCK: [2023-10-28 Sat 19:49]--[2023-10-28 Sat 20:29] =>  0:40
+CLOCK: [2023-10-28 Sat 18:33]--[2023-10-28 Sat 19:13] =>  0:40
+CLOCK: [2023-10-28 Sat 17:52]--[2023-10-28 Sat 18:32] =>  0:40
+CLOCK: [2023-10-28 Sat 17:06]--[2023-10-28 Sat 17:46] =>  0:40
+CLOCK: [2023-10-28 Sat 16:20]--[2023-10-28 Sat 17:00] =>  0:40
 :END:
