@@ -9,7 +9,9 @@ CLOSED: [2023-10-28 Sat 11:10]
 CLOCK: [2023-10-28 Sat 10:30]--[2023-10-28 Sat 11:10] =>  0:40
 :END:
 ** DONE Research, read post-mortems, etc
-CLOSED: [2023-10-28 Sat 12:37]
+:PROPERTIES:
+:Effort:   1:00
+:END:
 :LOGBOOK:
 - State "DONE"       from "TODO"       [2023-10-28 Sat 11:50]
 CLOCK: [2023-10-28 Sat 11:20]--[2023-10-28 Sat 12:00] =>  0:40

