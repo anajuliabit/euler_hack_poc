@@ -1,4 +1,4 @@
-* PROGRESS Code challenge
+* PROGRESS Euler Finance Incident POC
 :PROPERTIES:
 :Effort:   3:00
 :END:
@@ -32,4 +32,13 @@ CLOCK: [2023-10-28 Sat 18:33]--[2023-10-28 Sat 19:13] =>  0:40
 CLOCK: [2023-10-28 Sat 17:52]--[2023-10-28 Sat 18:32] =>  0:40
 CLOCK: [2023-10-28 Sat 17:06]--[2023-10-28 Sat 17:46] =>  0:40
 CLOCK: [2023-10-28 Sat 16:20]--[2023-10-28 Sat 17:00] =>  0:40
+:END:
+** PROGRESS best practices recommendations
+:PROPERTIES:
+:Effort:   2:00
+:END:
+:LOGBOOK:
+CLOCK: [2023-10-30 Mon 10:46]--[2023-10-30 Mon 11:26] =>  0:40
+CLOCK: [2023-10-30 Mon 10:00]--[2023-10-30 Mon 10:40] =>  0:40
+CLOCK: [2023-10-30 Mon 09:15]--[2023-10-30 Mon 09:55] =>  0:40
 :END:

