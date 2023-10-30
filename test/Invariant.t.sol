@@ -19,14 +19,20 @@ contract InvariantTest is Test {
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), Constants.ATTACK_BLOCK_NUMBER - 1);
         eDAI = Addresses.eDAI;
         dDAI = Addresses.dDAI;
+        IERC20 token = IERC20(Constants.DAI);
 
-        handler = new Handler();
+        handler = new Handler(eDAI, dDAI, token);
         targetContract(address(handler));
     }
 
-    // Invariant to check account health
-    function invariant_debtNeverInsovent() public {
+    // No protocol action should be able to result in an account with risk adjusted liability > risk adjusted assets (checkLiquidity failing)
+    function invariant_NeverInsovent() public view {
         address user = address(handler);
+        uint256 dTokenBalance = dDAI.balanceOf(user);
+        uint256 eTokenBalance = eDAI.balanceOf(user);
+
+        console2.log("dToken balance", dTokenBalance / 1e18);
+        console2.log("eToken balance", eTokenBalance / 1e18);
 
         // Check invariants
         assert(dDAI.balanceOf(user) <= eDAI.balanceOf(user));

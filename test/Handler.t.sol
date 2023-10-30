@@ -4,7 +4,6 @@ pragma solidity ^0.8.4;
 import {Test, console2, StdCheats, StdInvariant} from "forge-std/Test.sol";
 import {IERC20} from "@aave/v3/dependencies/openzeppelin/contracts/IERC20.sol";
 import { Addresses } from "../src/libraries/Addresses.sol";
-import { Constants } from "./Constants.sol";
 import {EToken} from "euler-contracts/modules/EToken.sol";
 import {DToken} from "euler-contracts/modules/DToken.sol";
 
@@ -14,36 +13,40 @@ contract Handler is Test {
     DToken public dToken;
     IERC20 public token;
 
-    constructor () {
-        eToken = Addresses.eDAI;
-        dToken = Addresses.dDAI;
-        token = IERC20(Constants.DAI);
+    constructor (EToken _etoken, DToken _dtoken, IERC20 _token) {
+        eToken = _etoken;
+        dToken = _dtoken;
+        token = _token;
     }
 
-    function donateToReserves(uint256 _amount, uint8 leverage) public {
-        // Assume upper limits
-        vm.assume(_amount < 10e23);
-        vm.assume(leverage <= 10);
+    function borrowWithLeverageAndDonate(uint256 _amount) public {
+        // Get from euler-contracts/contracts/Constants.sol
+        uint MAX_SANE_AMOUNT = type(uint112).max;
+        vm.assume(_amount <= MAX_SANE_AMOUNT);
 
-        // Mint 150% of the amount
-        deal(address(token), address(this), _amount * 150 / 10);
+       // minBalance is 150% of _amount since we are using 2/3 for leverage and 1/3 for decrease dToken balance (repay)
+        uint256 minBalance = (_amount * 3) / 2;
 
-        token.approve(Addresses.EULER, _amount);
+        // Increase this contract DAI balance
+        deal(address(token), address(this), minBalance);
+
+        token.approve(Addresses.EULER, minBalance);
         eToken.deposit(0, _amount);
 
-        uint256 amountLeveraged = _amount * leverage;
 
+        uint256 amountLeveraged = _amount * 10;
+
+        // Leverage eToken
         eToken.mint(0, amountLeveraged);
 
+        // Repay half of the loan decreasing dToken balance
         dToken.repay(0, _amount / 2);
 
+        // Leverage again
         eToken.mint(0, amountLeveraged);
 
-        // Donate to reserves
+        // Donate half of leveraged eToken to reserves
         eToken.donateToReserves(0, amountLeveraged / 2);
-
-        // Check invariants
-
 
     }
 }

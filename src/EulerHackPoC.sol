@@ -84,7 +84,7 @@ contract Violator {
         // Check DAI balance
         uint256 balance = _token.balanceOf(address(this));
 
-        // minBalance is 150% of _amount since we are using 2/3 for leverage and 1/3 for repay and cause the dDAI balance to decrease
+        // minBalance is 150% of _amount since we are using 2/3 for leverage and 1/3 for repaying to decrease dDAI balance
         uint256 minBalance = (_amount * 3) / 2;
 
         // Check if we have enough funds to execute the attack
