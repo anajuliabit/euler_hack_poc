@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.4;
 
-import {Test, console2} from "forge-std/Test.sol";
 import {IPool} from "@aave/v3/interfaces/IPool.sol";
 import {FlashLoanSimpleReceiverBase} from "@aave/v3/flashloan/base/FlashLoanSimpleReceiverBase.sol";
 import {IERC20} from "@aave/v3/dependencies/openzeppelin/contracts/IERC20.sol";
@@ -15,7 +14,7 @@ import {Addresses} from "./libraries/Addresses.sol";
 error NotEnoughFunds(uint256 balance, uint256 amount);
 error NotProfitable(uint256 eTokenBalance, uint256 dTokenBalance);
 
-contract EulerHackPoC is FlashLoanSimpleReceiverBase, Test {
+contract EulerHackPoC is FlashLoanSimpleReceiverBase {
 
     Violator private violator;
 
@@ -136,7 +135,7 @@ contract Violator {
 
 
 contract Liquidator {
-    Liquidation public constant liquidation = Liquidation(0xf43ce1d09050BAfd6980dD43Cde2aB9F18C85b34);
+    Liquidation public constant liquidation = Liquidation(Addresses.LIQUIDATION);
 
     function executeLiquidation(address _attacker, address _violator, IERC20 _token) external {
         // 8. Liquidate the violator’s position
