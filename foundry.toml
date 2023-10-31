@@ -13,4 +13,4 @@ remappings = [
 
 [profile.default.invariant]
 runs = 10
-max_test_rejects = 1
+#max_test_rejects = 1

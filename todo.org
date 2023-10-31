@@ -1,7 +1,12 @@
-* PROGRESS Euler Finance Incident POC
+* DONE Euler Finance Incident POC
+CLOSED: [2023-10-30 Mon 21:17]
 :PROPERTIES:
 :Effort:   3:00
 :END:
+:LOGBOOK:
+- State "DONE"       from "PROGRESS"   [2023-10-30 Mon 21:17]
+:END:
+
 ** DONE Choose vulnerability
 CLOSED: [2023-10-28 Sat 11:10]
 :LOGBOOK:
@@ -17,7 +22,7 @@ CLOSED: [2023-10-28 Sat 11:50]
 - State "DONE"       from "TODO"       [2023-10-28 Sat 11:50]
 CLOCK: [2023-10-28 Sat 11:20]--[2023-10-28 Sat 12:00] =>  0:40
 :END:
-** DONE Work on POC
+** DONE Exploit POC
 CLOSED: [2023-10-29 Sun 20:56]
 :PROPERTIES:
 :Effort:   2:00
@@ -33,11 +38,16 @@ CLOCK: [2023-10-28 Sat 17:52]--[2023-10-28 Sat 18:32] =>  0:40
 CLOCK: [2023-10-28 Sat 17:06]--[2023-10-28 Sat 17:46] =>  0:40
 CLOCK: [2023-10-28 Sat 16:20]--[2023-10-28 Sat 17:00] =>  0:40
 :END:
-** PROGRESS best practices recommendations
+** DONE Best practices recommendations
+CLOSED: [2023-10-30 Mon 21:10]
 :PROPERTIES:
 :Effort:   2:00
 :END:
 :LOGBOOK:
+- State "DONE"       from "PROGRESS"   [2023-10-30 Mon 21:10]
+CLOCK: [2023-10-30 Mon 20:03]--[2023-10-30 Mon 20:43] =>  0:40
+CLOCK: [2023-10-30 Mon 16:02]--[2023-10-30 Mon 16:42] =>  0:40
+CLOCK: [2023-10-30 Mon 15:05]--[2023-10-30 Mon 15:45] =>  0:40
 CLOCK: [2023-10-30 Mon 10:46]--[2023-10-30 Mon 11:26] =>  0:40
 CLOCK: [2023-10-30 Mon 10:00]--[2023-10-30 Mon 10:40] =>  0:40
 CLOCK: [2023-10-30 Mon 09:15]--[2023-10-30 Mon 09:55] =>  0:40

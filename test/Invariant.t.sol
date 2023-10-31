@@ -25,14 +25,11 @@ contract InvariantTest is Test {
         targetContract(address(handler));
     }
 
-    // No protocol action should be able to result in an account with risk adjusted liability > risk adjusted assets (checkLiquidity failing)
-    function invariant_NeverInsovent() public view {
+    // @notice invariant: No protocol action should be able to result in an account with risk adjusted liability > risk adjusted assets (checkLiquidity failing)
+    // @dev I've used the balance of EToken and DToken just for simplicity as this is only an example.
+    // The logic in checkLiquidity should have been used to check the real invariant.
+    function invariant_NeverInsolvent() public view {
         address user = address(handler);
-        uint256 dTokenBalance = dDAI.balanceOf(user);
-        uint256 eTokenBalance = eDAI.balanceOf(user);
-
-        console2.log("dToken balance", dTokenBalance / 1e18);
-        console2.log("eToken balance", eTokenBalance / 1e18);
 
         // Check invariants
         assert(dDAI.balanceOf(user) <= eDAI.balanceOf(user));

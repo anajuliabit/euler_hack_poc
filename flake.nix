@@ -17,7 +17,7 @@
 
         devShell = with pkgs;
           mkShell {
-            buildInputs = [ foundry-bin ];
+            buildInputs = [ foundry-bin solc ];
 
             # Decorative prompt override so we know when we're in a dev shell
             shellHook = ''

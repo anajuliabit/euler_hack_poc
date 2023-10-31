@@ -1,17 +1,38 @@
 * Euler Finance Incident POC
-** The exploit
-The hack resulted in the loss of over ~75% of its $264M TVL, and later became utterly REKT (current TVL is only $72k).
-This had a domino effect on other protocols, such as Angle Protocol and Balance, as reported on https://rekt.news/euler-rekt/.
-This repo contains a POC for the hack using reserve engineering technique based on the [[https://medium.com/@omniscia.io/euler-finance-incident-post-mortem-1ce077c28454][Imniscia Euler Finance Incident Post-Mortem]]
+** Overview
+After the hack, the protocol's TVL plummeted by around 75%, causing it to lose over $200 million. As a result, the protocol became rekt, with its current TVL standing at a mere $77k. This event had a ripple effect on other protocols, including Balance and Angle Protocol, as reported on [[https://rekt.news/euler-rekt/][rekt news]]. This repository contains a POC showcasing the hack, which was executed using reverse engineering techniques.
 
 ** The [[https://etherscan.io/tx/0xc310a0affe2169d1f6feec1c63dbc7f7c62a887fa48795d327d4d2da2d6b111d][attack transaction]] step-by-step:
-1. Flahsloan from AaveV2 (although I did the POC with AaveV3)
+1. Call flahsloan on AaveV2 - although I did the POC using AaveV3
 2. Transfer the full loan balance to the violator contract
 3. Deposit 2/3 to Euler eDAI
 4. Create a 10x artificial eDAI leverage
-5. Repay half of the DAI violator’s position, causing their dDAI balance to decrease
+5. Repay half of the DAI violator’s position, causing dDAI balance to decrease
 6. Create another 10x artificial eDAI leverage
-7. Donate half of eDAI (leveraged) balance to the reserve of the eDAI
-8. Liquidates the violator position, completing the exploit
+7. Donate half of eDAI leveraged balance to the reserve of the eDAI
+8. Liquidates the violator position
 
-** Best practices recommendation
+** Running
+- Clone this repo
+- =cp .env.example .env= and update the MAINNET_RPC_URL
+- If you have Nix installed, running =nix develop= will give you access to a shell with solc  and Foundry. Otherwise, ensure you have both installed
+- Run exploit POC: =make exploit=
+- Run invariant test: =make invariant=
+
+** Best Practices Recommendation
+Upon reviewing Euler Finance, it appears that [[https://github.com/euler-xyz/euler-contracts/blob/master/docs/invariants.md][invariants.md]] contains the missing invariant checks, since there are no tests written for those invariants in [[https://github.com/euler-xyz/euler-contracts/blob/master/contracts/test/InvariantChecker.sol][InvariantsChecker.sol]].
+
+One of the invariants is as follows:
+    /No protocol action should be able to result in an account with risk adjusted liability > risk adjusted assets (checkLiquidity failing)/
+
+The root cause of the vulnerability was the lack of a health check in the account of the =donateToReserves= method caller. The situation could have been avoided if the aforementioned invariant test had been conducted.
+
+To demonstrate an example of an invariant test, I've provided [[file:test/Invariant.t.sol][Invariant.t.sol]]. You can execute the test by running =make invariant=.
+Please note that the test intentionally fails to exhibit the violation of the invariant.
+
+You can comment out line 52 on [[file:test/Handler.t.sol][Handler.t.sol]] to verify that the =donateToReserves= call is responsible for the invariant violation.
+
+** References
+- [[https://medium.com/@omniscia.io/euler-finance-incident-post-mortem-1ce077c28454][Omniscia Euler Finance Incident Post-Mortem]]
+- [[https://rekt.news/euler-rekt/][Rekt News]]
+- [[https://defillama.com/protocol/euler][Defi Llama]]

@@ -22,13 +22,13 @@ contract EulerHackPoCTest is Test {
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), Constants.ATTACK_BLOCK_NUMBER - 1);
         IPoolAddressesProvider poolAddressesProvider = IPoolAddressesProvider(Constants.POOL_ADDRESSES_PROVIDER);
         pool = IPool(poolAddressesProvider.getPool());
-        attacker = new EulerHackPoC(poolAddressesProvider, Constants.DAI);
+        attacker = new EulerHackPoC(poolAddressesProvider);
     }
 
     function test_Attack() public {
         // Get the attacker's balance before the attack
         uint256 attackerBalanceBefore = IERC20(Constants.DAI).balanceOf(address(attacker));
-        console2.log("Attacker DAI balance before:", attackerBalanceBefore/ 1e18);
+        console2.log("Attacker DAI balance before:", attackerBalanceBefore / 1e18);
 
         // Get reserve data
         DataTypes.ReserveData memory reserveData = pool.getReserveData(Constants.DAI);

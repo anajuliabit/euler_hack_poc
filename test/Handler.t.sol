@@ -7,6 +7,9 @@ import { Addresses } from "../src/libraries/Addresses.sol";
 import {EToken} from "euler-contracts/modules/EToken.sol";
 import {DToken} from "euler-contracts/modules/DToken.sol";
 
+// From lib/euler-contracts/contracts/Constants.sol
+uint constant MAX_SANE_AMOUNT = type(uint112).max;
+
 contract Handler is Test {
 
     EToken public eToken;
@@ -20,12 +23,12 @@ contract Handler is Test {
     }
 
     function borrowWithLeverageAndDonate(uint256 _amount) public {
-        // Get from euler-contracts/contracts/Constants.sol
-        uint MAX_SANE_AMOUNT = type(uint112).max;
         vm.assume(_amount <= MAX_SANE_AMOUNT);
 
-       // minBalance is 150% of _amount since we are using 2/3 for leverage and 1/3 for decrease dToken balance (repay)
-        uint256 minBalance = (_amount * 3) / 2;
+       // The minBalance is set to 150% of the given _amount.
+        // - 2/3 of the _amount is used for leveraging the position.
+        // - 1/3 of the _amount is used to decrease the dToken balance, effectively repaying part of the debt.
+        uint256 minBalance = _amount * 3 / 2;
 
         // Increase this contract DAI balance
         deal(address(token), address(this), minBalance);
@@ -33,7 +36,7 @@ contract Handler is Test {
         token.approve(Addresses.EULER, minBalance);
         eToken.deposit(0, _amount);
 
-
+        // @dev leverage can be a arg
         uint256 amountLeveraged = _amount * 10;
 
         // Leverage eToken
