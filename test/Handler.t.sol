@@ -25,6 +25,9 @@ contract Handler is Test {
     function borrowWithLeverageAndDonate(uint256 _amount) public {
         vm.assume(_amount <= MAX_SANE_AMOUNT);
 
+        // convert amount to 18 decimals
+        _amount = _amount * 1e18;
+
        // The minBalance is set to 150% of the given _amount.
         // - 2/3 of the _amount is used for leveraging the position.
         // - 1/3 of the _amount is used to decrease the dToken balance, effectively repaying part of the debt.
