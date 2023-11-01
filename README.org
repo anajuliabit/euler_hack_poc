@@ -15,7 +15,7 @@ After the hack, the protocol's TVL plummeted by around 75%, causing it to lose o
 ** Running
 - Clone this repo
 - =cp .env.example .env= and update the MAINNET_RPC_URL
-- If you have Nix installed, running =nix develop= will give you access to a shell with solc  and Foundry. Otherwise, ensure you have both installed
+- If you have Nix installed, running =nix develop= will give you access to a shell with Foundry. Otherwise, ensure you have it installed
 - Run exploit POC: =make exploit=
 - Run invariant test: =make invariant=
 
