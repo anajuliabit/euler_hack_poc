@@ -1,0 +1,3146 @@
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/Base.sol
+   1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+   2 |     | 
+   3 |     | pragma solidity ^0.8.0;
+   4 |     | //import "hardhat/console.sol"; // DEV_MODE
+   5 |     | 
+   6 |     | import "./Storage.sol";
+   7 |     | import "./Events.sol";
+   8 |     | import "./Proxy.sol";
+   9 |     | 
+  10 |     | abstract contract Base is Storage, Events {
+  11 |     |     // Modules
+  12 |     | 
+  13 |     |     function _createProxy(uint proxyModuleId) internal returns (address) {
+  14 |     |         require(proxyModuleId != 0, "e/create-proxy/invalid-module");
+  15 |     |         require(proxyModuleId <= MAX_EXTERNAL_MODULEID, "e/create-proxy/internal-module");
+  16 |     | 
+  17 |     |         // If we've already created a proxy for a single-proxy module, just return it:
+  18 |     | 
+  19 |     |         if (proxyLookup[proxyModuleId] != address(0)) return proxyLookup[proxyModuleId];
+  20 |     | 
+  21 |     |         // Otherwise create a proxy:
+  22 |     | 
+  23 |     |         address proxyAddr = address(new Proxy());
+  24 |     | 
+  25 |     |         if (proxyModuleId <= MAX_EXTERNAL_SINGLE_PROXY_MODULEID) proxyLookup[proxyModuleId] = proxyAddr;
+  26 |     | 
+  27 |     |         trustedSenders[proxyAddr] = TrustedSenderInfo({ moduleId: uint32(proxyModuleId), moduleImpl: address(0) });
+  28 |     | 
+  29 |     |         emit ProxyCreated(proxyAddr, proxyModuleId);
+  30 |     | 
+  31 |     |         return proxyAddr;
+  32 |     |     }
+  33 |     | 
+  34 |     |     function callInternalModule(uint moduleId, bytes memory input) internal returns (bytes memory) {
+  35 |     |         (bool success, bytes memory result) = moduleLookup[moduleId].delegatecall(input);
+  36 |     |         if (!success) revertBytes(result);
+  37 |     |         return result;
+  38 |     |     }
+  39 |     | 
+  40 |     | 
+  41 |     | 
+  42 |     |     // Modifiers
+  43 |     | 
+  44 |     |     modifier nonReentrant() {
+  45 |     |         require(reentrancyLock == REENTRANCYLOCK__UNLOCKED, "e/reentrancy");
+  46 |     | 
+  47 |     |         reentrancyLock = REENTRANCYLOCK__LOCKED;
+  48 |     |         _;
+  49 |     |         reentrancyLock = REENTRANCYLOCK__UNLOCKED;
+  50 |     |     }
+  51 |     | 
+  52 |     |     modifier reentrantOK() { // documentation only
+  53 |     |         _;
+  54 |     |     }
+  55 |     | 
+  56 |     |     // Used to flag functions which do not modify storage, but do perform a delegate call
+  57 |     |     // to a view function, which prohibits a standard view modifier. The flag is used to
+  58 |     |     // patch state mutability in compiled ABIs and interfaces.
+  59 |     |     modifier staticDelegate() {
+  60 |     |         _;
+  61 |     |     }
+  62 |     | 
+  63 |     |     // WARNING: Must be very careful with this modifier. It resets the free memory pointer
+  64 |     |     // to the value it was when the function started. This saves gas if more memory will
+  65 |     |     // be allocated in the future. However, if the memory will be later referenced
+  66 |     |     // (for example because the function has returned a pointer to it) then you cannot
+  67 |     |     // use this modifier.
+  68 |     | 
+  69 |     |     modifier FREEMEM() {
+  70 |     |         uint origFreeMemPtr;
+  71 |     | 
+  72 |     |         assembly {
+  73 |     |             origFreeMemPtr := mload(0x40)
+  74 |     |         }
+  75 |     | 
+  76 |     |         _;
+  77 |     | 
+  78 |     |         /*
+  79 |     |         assembly { // DEV_MODE: overwrite the freed memory with garbage to detect bugs
+  80 |     |             let garbage := 0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF
+  81 |     |             for { let i := origFreeMemPtr } lt(i, mload(0x40)) { i := add(i, 32) } { mstore(i, garbage) }
+  82 |     |         }
+  83 |     |         */
+  84 |     | 
+  85 |     |         assembly {
+  86 |     |             mstore(0x40, origFreeMemPtr)
+  87 |     |         }
+  88 |     |     }
+  89 |     | 
+  90 |     | 
+  91 |     | 
+  92 |     |     // Error handling
+  93 |     | 
+  94 |     |     function revertBytes(bytes memory errMsg) internal pure {
+  95 |     |         if (errMsg.length > 0) {
+  96 |     |             assembly {
+  97 |     |                 revert(add(32, errMsg), mload(errMsg))
+  98 |     |             }
+  99 |     |         }
+ 100 |     | 
+ 101 |     |         revert("e/empty-error");
+ 102 |     |     }
+ 103 |     | }
+ 104 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/BaseIRM.sol
+  1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+  2 |     | 
+  3 |     | pragma solidity ^0.8.0;
+  4 |     | 
+  5 |     | import "./BaseModule.sol";
+  6 |     | 
+  7 |     | abstract contract BaseIRM is BaseModule {
+  8 |     |     constructor(uint moduleId_, bytes32 moduleGitCommit_) BaseModule(moduleId_, moduleGitCommit_) {}
+  9 |     | 
+ 10 |     |     int96 internal constant MAX_ALLOWED_INTEREST_RATE = int96(int(uint(5 * 1e27) / SECONDS_PER_YEAR)); // 500% APR
+ 11 |     |     int96 internal constant MIN_ALLOWED_INTEREST_RATE = 0;
+ 12 |     | 
+ 13 |     |     function computeInterestRateImpl(address, uint32) internal virtual returns (int96);
+ 14 |     | 
+ 15 |     |     function computeInterestRate(address underlying, uint32 utilisation) external returns (int96) {
+ 16 |     |         int96 rate = computeInterestRateImpl(underlying, utilisation);
+ 17 |     | 
+ 18 |     |         if (rate > MAX_ALLOWED_INTEREST_RATE) rate = MAX_ALLOWED_INTEREST_RATE;
+ 19 |     |         else if (rate < MIN_ALLOWED_INTEREST_RATE) rate = MIN_ALLOWED_INTEREST_RATE;
+ 20 |     | 
+ 21 |     |         return rate;
+ 22 |     |     }
+ 23 |     | 
+ 24 |     |     function reset(address underlying, bytes calldata resetParams) external virtual {}
+ 25 |     | }
+ 26 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/BaseIRMLinearKink.sol
+  1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+  2 |     | 
+  3 |     | pragma solidity ^0.8.0;
+  4 |     | 
+  5 |     | import "./BaseIRM.sol";
+  6 |     | 
+  7 |     | 
+  8 |     | contract BaseIRMLinearKink is BaseIRM {
+  9 |     |     uint public immutable baseRate;
+ 10 |     |     uint public immutable slope1;
+ 11 |     |     uint public immutable slope2;
+ 12 |     |     uint public immutable kink;
+ 13 |     | 
+ 14 |     |     constructor(uint moduleId_, bytes32 moduleGitCommit_, uint baseRate_, uint slope1_, uint slope2_, uint kink_) BaseIRM(moduleId_, moduleGitCommit_) {
+ 15 |     |         baseRate = baseRate_;
+ 16 |     |         slope1 = slope1_;
+ 17 |     |         slope2 = slope2_;
+ 18 |     |         kink = kink_;
+ 19 |     |     }
+ 20 |     | 
+ 21 |     |     function computeInterestRateImpl(address, uint32 utilisation) internal override view returns (int96) {
+ 22 |     |         uint ir = baseRate;
+ 23 |     | 
+ 24 |     |         if (utilisation <= kink) {
+ 25 |     |             ir += utilisation * slope1;
+ 26 |     |         } else {
+ 27 |     |             ir += kink * slope1;
+ 28 |     |             ir += slope2 * (utilisation - kink);
+ 29 |     |         }
+ 30 |     | 
+ 31 |     |         return int96(int(ir));
+ 32 |     |     }
+ 33 |     | }
+ 34 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/BaseLogic.sol
+   1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+   2 |     | 
+   3 |     | pragma solidity ^0.8.0;
+   4 |     | 
+   5 |     | import "./BaseModule.sol";
+   6 |     | import "./BaseIRM.sol";
+   7 |     | import "./Interfaces.sol";
+   8 |     | import "./Utils.sol";
+   9 |     | import "./vendor/RPow.sol";
+  10 |     | import "./IRiskManager.sol";
+  11 |     | 
+  12 |     | 
+  13 |     | abstract contract BaseLogic is BaseModule {
+  14 |     |     constructor(uint moduleId_, bytes32 moduleGitCommit_) BaseModule(moduleId_, moduleGitCommit_) {}
+  15 |     | 
+  16 |     | 
+  17 |     |     // Account auth
+  18 |     | 
+  19 |     |     function getSubAccount(address primary, uint subAccountId) internal pure returns (address) {
+  20 |     |         require(subAccountId < 256, "e/sub-account-id-too-big");
+  21 |     |         return address(uint160(primary) ^ uint160(subAccountId));
+  22 |     |     }
+  23 |     | 
+  24 |     |     function isSubAccountOf(address primary, address subAccount) internal pure returns (bool) {
+  25 |     |         return (uint160(primary) | 0xFF) == (uint160(subAccount) | 0xFF);
+  26 |     |     }
+  27 |     | 
+  28 |     | 
+  29 |     | 
+  30 |     |     // Entered markets array
+  31 |     | 
+  32 |     |     function getEnteredMarketsArray(address account) internal view returns (address[] memory) {
+  33 |     |         uint32 numMarketsEntered = accountLookup[account].numMarketsEntered;
+  34 |     |         address firstMarketEntered = accountLookup[account].firstMarketEntered;
+  35 |     | 
+  36 |     |         address[] memory output = new address[](numMarketsEntered);
+  37 |     |         if (numMarketsEntered == 0) return output;
+  38 |     | 
+  39 |     |         address[MAX_POSSIBLE_ENTERED_MARKETS] storage markets = marketsEntered[account];
+  40 |     | 
+  41 |     |         output[0] = firstMarketEntered;
+  42 |     | 
+  43 |     |         for (uint i = 1; i < numMarketsEntered; ++i) {
+  44 |     |             output[i] = markets[i];
+  45 |     |         }
+  46 |     | 
+  47 |     |         return output;
+  48 |     |     }
+  49 |     | 
+  50 |     |     function isEnteredInMarket(address account, address underlying) internal view returns (bool) {
+  51 |     |         uint32 numMarketsEntered = accountLookup[account].numMarketsEntered;
+  52 |     |         address firstMarketEntered = accountLookup[account].firstMarketEntered;
+  53 |     | 
+  54 |     |         if (numMarketsEntered == 0) return false;
+  55 |     |         if (firstMarketEntered == underlying) return true;
+  56 |     | 
+  57 |     |         address[MAX_POSSIBLE_ENTERED_MARKETS] storage markets = marketsEntered[account];
+  58 |     | 
+  59 |     |         for (uint i = 1; i < numMarketsEntered; ++i) {
+  60 |     |             if (markets[i] == underlying) return true;
+  61 |     |         }
+  62 |     | 
+  63 |     |         return false;
+  64 |     |     }
+  65 |     | 
+  66 |     |     function doEnterMarket(address account, address underlying) internal {
+  67 |     |         AccountStorage storage accountStorage = accountLookup[account];
+  68 |     | 
+  69 |     |         uint32 numMarketsEntered = accountStorage.numMarketsEntered;
+  70 |     |         address[MAX_POSSIBLE_ENTERED_MARKETS] storage markets = marketsEntered[account];
+  71 |     | 
+  72 |     |         if (numMarketsEntered != 0) {
+  73 |     |             if (accountStorage.firstMarketEntered == underlying) return; // already entered
+  74 |     |             for (uint i = 1; i < numMarketsEntered; i++) {
+  75 |     |                 if (markets[i] == underlying) return; // already entered
+  76 |     |             }
+  77 |     |         }
+  78 |     | 
+  79 |     |         require(numMarketsEntered < MAX_ENTERED_MARKETS, "e/too-many-entered-markets");
+  80 |     | 
+  81 |     |         if (numMarketsEntered == 0) accountStorage.firstMarketEntered = underlying;
+  82 |     |         else markets[numMarketsEntered] = underlying;
+  83 |     | 
+  84 |     |         accountStorage.numMarketsEntered = numMarketsEntered + 1;
+  85 |     | 
+  86 |     |         emit EnterMarket(underlying, account);
+  87 |     |     }
+  88 |     | 
+  89 |     |     // Liquidity check must be done by caller after calling this
+  90 |     | 
+  91 |     |     function doExitMarket(address account, address underlying) internal {
+  92 |     |         AccountStorage storage accountStorage = accountLookup[account];
+  93 |     | 
+  94 |     |         uint32 numMarketsEntered = accountStorage.numMarketsEntered;
+  95 |     |         address[MAX_POSSIBLE_ENTERED_MARKETS] storage markets = marketsEntered[account];
+  96 |     |         uint searchIndex = type(uint).max;
+  97 |     | 
+  98 |     |         if (numMarketsEntered == 0) return; // already exited
+  99 |     | 
+ 100 |     |         if (accountStorage.firstMarketEntered == underlying) {
+ 101 |     |             searchIndex = 0;
+ 102 |     |         } else {
+ 103 |     |             for (uint i = 1; i < numMarketsEntered; i++) {
+ 104 |     |                 if (markets[i] == underlying) {
+ 105 |     |                     searchIndex = i;
+ 106 |     |                     break;
+ 107 |     |                 }
+ 108 |     |             }
+ 109 |     | 
+ 110 |     |             if (searchIndex == type(uint).max) return; // already exited
+ 111 |     |         }
+ 112 |     | 
+ 113 |     |         uint lastMarketIndex = numMarketsEntered - 1;
+ 114 |     | 
+ 115 |     |         if (searchIndex != lastMarketIndex) {
+ 116 |     |             if (searchIndex == 0) accountStorage.firstMarketEntered = markets[lastMarketIndex];
+ 117 |     |             else markets[searchIndex] = markets[lastMarketIndex];
+ 118 |     |         }
+ 119 |     | 
+ 120 |     |         accountStorage.numMarketsEntered = uint32(lastMarketIndex);
+ 121 |     | 
+ 122 |     |         if (lastMarketIndex != 0) markets[lastMarketIndex] = address(0); // zero out for storage refund
+ 123 |     | 
+ 124 |     |         emit ExitMarket(underlying, account);
+ 125 |     |     }
+ 126 |     | 
+ 127 |     | 
+ 128 |     | 
+ 129 |     |     // AssetConfig
+ 130 |     | 
+ 131 |     |     function resolveAssetConfig(address underlying) internal view returns (AssetConfig memory) {
+ 132 |     |         AssetConfig memory config = underlyingLookup[underlying];
+ 133 |     |         require(config.eTokenAddress != address(0), "e/market-not-activated");
+ 134 |     | 
+ 135 |     |         if (config.borrowFactor == type(uint32).max) config.borrowFactor = DEFAULT_BORROW_FACTOR;
+ 136 |     |         if (config.twapWindow == type(uint24).max) config.twapWindow = DEFAULT_TWAP_WINDOW_SECONDS;
+ 137 |     | 
+ 138 |     |         return config;
+ 139 |     |     }
+ 140 |     | 
+ 141 |     | 
+ 142 |     |     // AssetCache
+ 143 |     | 
+ 144 |     |     struct AssetCache {
+ 145 |     |         address underlying;
+ 146 |     | 
+ 147 |     |         uint112 totalBalances;
+ 148 |     |         uint144 totalBorrows;
+ 149 |     | 
+ 150 |     |         uint96 reserveBalance;
+ 151 |     | 
+ 152 |     |         uint interestAccumulator;
+ 153 |     | 
+ 154 |     |         uint40 lastInterestAccumulatorUpdate;
+ 155 |     |         uint8 underlyingDecimals;
+ 156 |     |         uint32 interestRateModel;
+ 157 |     |         int96 interestRate;
+ 158 |     |         uint32 reserveFee;
+ 159 |     |         uint16 pricingType;
+ 160 |     |         uint32 pricingParameters;
+ 161 |     | 
+ 162 |     |         uint poolSize; // result of calling balanceOf on underlying (in external units)
+ 163 |     | 
+ 164 |     |         uint underlyingDecimalsScaler;
+ 165 |     |         uint maxExternalAmount;
+ 166 |     |     }
+ 167 |     | 
+ 168 |     |     function initAssetCache(address underlying, AssetStorage storage assetStorage, AssetCache memory assetCache) internal view returns (bool dirty) {
+ 169 |     |         dirty = false;
+ 170 |     | 
+ 171 |     |         assetCache.underlying = underlying;
+ 172 |     | 
+ 173 |     |         // Storage loads
+ 174 |     | 
+ 175 |     |         assetCache.lastInterestAccumulatorUpdate = assetStorage.lastInterestAccumulatorUpdate;
+ 176 |     |         uint8 underlyingDecimals = assetCache.underlyingDecimals = assetStorage.underlyingDecimals;
+ 177 |     |         assetCache.interestRateModel = assetStorage.interestRateModel;
+ 178 |     |         assetCache.interestRate = assetStorage.interestRate;
+ 179 |     |         assetCache.reserveFee = assetStorage.reserveFee;
+ 180 |     |         assetCache.pricingType = assetStorage.pricingType;
+ 181 |     |         assetCache.pricingParameters = assetStorage.pricingParameters;
+ 182 |     | 
+ 183 |     |         assetCache.reserveBalance = assetStorage.reserveBalance;
+ 184 |     | 
+ 185 |     |         assetCache.totalBalances = assetStorage.totalBalances;
+ 186 |     |         assetCache.totalBorrows = assetStorage.totalBorrows;
+ 187 |     | 
+ 188 |     |         assetCache.interestAccumulator = assetStorage.interestAccumulator;
+ 189 |     | 
+ 190 |     |         // Derived state
+ 191 |     | 
+ 192 |     |         unchecked {
+ 193 |     |             assetCache.underlyingDecimalsScaler = 10**(18 - underlyingDecimals);
+ 194 |     |             assetCache.maxExternalAmount = MAX_SANE_AMOUNT / assetCache.underlyingDecimalsScaler;
+ 195 |     |         }
+ 196 |     | 
+ 197 |     |         uint poolSize = callBalanceOf(assetCache, address(this));
+ 198 |     |         if (poolSize <= assetCache.maxExternalAmount) {
+ 199 |     |             unchecked { assetCache.poolSize = poolSize * assetCache.underlyingDecimalsScaler; }
+ 200 |     |         } else {
+ 201 |     |             assetCache.poolSize = 0;
+ 202 |     |         }
+ 203 |     | 
+ 204 |     |         // Update interest accumulator and reserves
+ 205 |     | 
+ 206 |     |         if (block.timestamp != assetCache.lastInterestAccumulatorUpdate) {
+ 207 |     |             dirty = true;
+ 208 |     | 
+ 209 |     |             uint deltaT = block.timestamp - assetCache.lastInterestAccumulatorUpdate;
+ 210 |     | 
+ 211 |     |             // Compute new values
+ 212 |     | 
+ 213 |     |             uint newInterestAccumulator = (RPow.rpow(uint(int(assetCache.interestRate) + 1e27), deltaT, 1e27) * assetCache.interestAccumulator) / 1e27;
+ 214 |     | 
+ 215 |     |             uint newTotalBorrows = assetCache.totalBorrows * newInterestAccumulator / assetCache.interestAccumulator;
+ 216 |     | 
+ 217 |     |             uint newReserveBalance = assetCache.reserveBalance;
+ 218 |     |             uint newTotalBalances = assetCache.totalBalances;
+ 219 |     | 
+ 220 |     |             uint feeAmount = (newTotalBorrows - assetCache.totalBorrows)
+ 221 |     |                                * (assetCache.reserveFee == type(uint32).max ? DEFAULT_RESERVE_FEE : assetCache.reserveFee)
+ 222 |     |                                / (RESERVE_FEE_SCALE * INTERNAL_DEBT_PRECISION);
+ 223 |     | 
+ 224 |     |             if (feeAmount != 0) {
+ 225 |     |                 uint poolAssets = assetCache.poolSize + (newTotalBorrows / INTERNAL_DEBT_PRECISION);
+ 226 |     |                 newTotalBalances = poolAssets * newTotalBalances / (poolAssets - feeAmount);
+ 227 |     |                 newReserveBalance += newTotalBalances - assetCache.totalBalances;
+ 228 |     |             }
+ 229 |     | 
+ 230 |     |             // Store new values in assetCache, only if no overflows will occur
+ 231 |     | 
+ 232 |     |             if (newTotalBalances <= MAX_SANE_AMOUNT && newTotalBorrows <= MAX_SANE_DEBT_AMOUNT && newReserveBalance <= MAX_SANE_SMALL_AMOUNT) {
+ 233 |     |                 assetCache.totalBorrows = encodeDebtAmount(newTotalBorrows);
+ 234 |     |                 assetCache.interestAccumulator = newInterestAccumulator;
+ 235 |     |                 assetCache.lastInterestAccumulatorUpdate = uint40(block.timestamp);
+ 236 |     | 
+ 237 |     |                 if (newTotalBalances != assetCache.totalBalances) {
+ 238 |     |                     assetCache.reserveBalance = encodeSmallAmount(newReserveBalance);
+ 239 |     |                     assetCache.totalBalances = encodeAmount(newTotalBalances);
+ 240 |     |                 }
+ 241 |     |             }
+ 242 |     |         }
+ 243 |     |     }
+ 244 |     | 
+ 245 |     |     function loadAssetCache(address underlying, AssetStorage storage assetStorage) internal returns (AssetCache memory assetCache) {
+ 246 |     |         if (initAssetCache(underlying, assetStorage, assetCache)) {
+ 247 |     |             assetStorage.lastInterestAccumulatorUpdate = assetCache.lastInterestAccumulatorUpdate;
+ 248 |     | 
+ 249 |     |             assetStorage.underlying = assetCache.underlying; // avoid an SLOAD of this slot
+ 250 |     |             assetStorage.reserveBalance = assetCache.reserveBalance;
+ 251 |     | 
+ 252 |     |             assetStorage.totalBalances = assetCache.totalBalances;
+ 253 |     |             assetStorage.totalBorrows = assetCache.totalBorrows;
+ 254 |     | 
+ 255 |     |             assetStorage.interestAccumulator = assetCache.interestAccumulator;
+ 256 |     |         }
+ 257 |     |     }
+ 258 |     | 
+ 259 |     |     function loadAssetCacheRO(address underlying, AssetStorage storage assetStorage) internal view returns (AssetCache memory assetCache) {
+ 260 |     |         require(reentrancyLock == REENTRANCYLOCK__UNLOCKED, "e/ro-reentrancy");
+ 261 |     |         initAssetCache(underlying, assetStorage, assetCache);
+ 262 |     |     }
+ 263 |     | 
+ 264 |     |     function internalLoadAssetCacheRO(address underlying, AssetStorage storage assetStorage) internal view returns (AssetCache memory assetCache) {
+ 265 |     |         initAssetCache(underlying, assetStorage, assetCache);
+ 266 |     |     }
+ 267 |     | 
+ 268 |     | 
+ 269 |     | 
+ 270 |     |     // Utils
+ 271 |     | 
+ 272 |     |     function decodeExternalAmount(AssetCache memory assetCache, uint externalAmount) internal pure returns (uint scaledAmount) {
+ 273 |     |         require(externalAmount <= assetCache.maxExternalAmount, "e/amount-too-large");
+ 274 |     |         unchecked { scaledAmount = externalAmount * assetCache.underlyingDecimalsScaler; }
+ 275 |     |     }
+ 276 |     | 
+ 277 |     |     function encodeAmount(uint amount) internal pure returns (uint112) {
+ 278 |     |         require(amount <= MAX_SANE_AMOUNT, "e/amount-too-large-to-encode");
+ 279 |     |         return uint112(amount);
+ 280 |     |     }
+ 281 |     | 
+ 282 |     |     function encodeSmallAmount(uint amount) internal pure returns (uint96) {
+ 283 |     |         require(amount <= MAX_SANE_SMALL_AMOUNT, "e/small-amount-too-large-to-encode");
+ 284 |     |         return uint96(amount);
+ 285 |     |     }
+ 286 |     | 
+ 287 |     |     function encodeDebtAmount(uint amount) internal pure returns (uint144) {
+ 288 |     |         require(amount <= MAX_SANE_DEBT_AMOUNT, "e/debt-amount-too-large-to-encode");
+ 289 |     |         return uint144(amount);
+ 290 |     |     }
+ 291 |     | 
+ 292 |     |     function computeExchangeRate(AssetCache memory assetCache) private pure returns (uint) {
+ 293 |     |         uint totalAssets = assetCache.poolSize + (assetCache.totalBorrows / INTERNAL_DEBT_PRECISION);
+ 294 |     |         if (totalAssets == 0 || assetCache.totalBalances == 0) return 1e18;
+ 295 |     |         return totalAssets * 1e18 / assetCache.totalBalances;
+ 296 |     |     }
+ 297 |     | 
+ 298 |     |     function underlyingAmountToBalance(AssetCache memory assetCache, uint amount) internal pure returns (uint) {
+ 299 |     |         uint exchangeRate = computeExchangeRate(assetCache);
+ 300 |     |         return amount * 1e18 / exchangeRate;
+ 301 |     |     }
+ 302 |     | 
+ 303 |     |     function underlyingAmountToBalanceRoundUp(AssetCache memory assetCache, uint amount) internal pure returns (uint) {
+ 304 |     |         uint exchangeRate = computeExchangeRate(assetCache);
+ 305 |     |         return (amount * 1e18 + (exchangeRate - 1)) / exchangeRate;
+ 306 |     |     }
+ 307 |     | 
+ 308 |     |     function balanceToUnderlyingAmount(AssetCache memory assetCache, uint amount) internal pure returns (uint) {
+ 309 |     |         uint exchangeRate = computeExchangeRate(assetCache);
+ 310 |     |         return amount * exchangeRate / 1e18;
+ 311 |     |     }
+ 312 |     | 
+ 313 |     |     function callBalanceOf(AssetCache memory assetCache, address account) internal view FREEMEM returns (uint) {
+ 314 |     |         // We set a gas limit so that a malicious token can't eat up all gas and cause a liquidity check to fail.
+ 315 |     | 
+ 316 |     |         (bool success, bytes memory data) = assetCache.underlying.staticcall{gas: 200000}(abi.encodeWithSelector(IERC20.balanceOf.selector, account));
+ 317 |     | 
+ 318 |     |         // If token's balanceOf() call fails for any reason, return 0. This prevents malicious tokens from causing liquidity checks to fail.
+ 319 |     |         // If the contract doesn't exist (maybe because selfdestructed), then data.length will be 0 and we will return 0.
+ 320 |     |         // Data length > 32 is allowed because some legitimate tokens append extra data that can be safely ignored.
+ 321 |     | 
+ 322 |     |         if (!success || data.length < 32) return 0;
+ 323 |     | 
+ 324 |     |         return abi.decode(data, (uint256));
+ 325 |     |     }
+ 326 |     | 
+ 327 |     |     function updateInterestRate(AssetStorage storage assetStorage, AssetCache memory assetCache) internal {
+ 328 |     |         uint32 utilisation;
+ 329 |     | 
+ 330 |     |         {
+ 331 |     |             uint totalBorrows = assetCache.totalBorrows / INTERNAL_DEBT_PRECISION;
+ 332 |     |             uint poolAssets = assetCache.poolSize + totalBorrows;
+ 333 |     |             if (poolAssets == 0) utilisation = 0; // empty pool arbitrarily given utilisation of 0
+ 334 |     |             else utilisation = uint32(totalBorrows * (uint(type(uint32).max) * 1e18) / poolAssets / 1e18);
+ 335 |     |         }
+ 336 |     | 
+ 337 |     |         bytes memory result = callInternalModule(assetCache.interestRateModel,
+ 338 |     |                                                  abi.encodeWithSelector(BaseIRM.computeInterestRate.selector, assetCache.underlying, utilisation));
+ 339 |     | 
+ 340 |     |         (int96 newInterestRate) = abi.decode(result, (int96));
+ 341 |     | 
+ 342 |     |         assetStorage.interestRate = assetCache.interestRate = newInterestRate;
+ 343 |     |     }
+ 344 |     | 
+ 345 |     |     function logAssetStatus(AssetCache memory a) internal {
+ 346 |     |         emit AssetStatus(a.underlying, a.totalBalances, a.totalBorrows / INTERNAL_DEBT_PRECISION, a.reserveBalance, a.poolSize, a.interestAccumulator, a.interestRate, block.timestamp);
+ 347 |     |     }
+ 348 |     | 
+ 349 |     | 
+ 350 |     | 
+ 351 |     |     // Balances
+ 352 |     | 
+ 353 |     |     function increaseBalance(AssetStorage storage assetStorage, AssetCache memory assetCache, address eTokenAddress, address account, uint amount) internal {
+ 354 |     |         assetStorage.users[account].balance = encodeAmount(assetStorage.users[account].balance + amount);
+ 355 |     | 
+ 356 |     |         assetStorage.totalBalances = assetCache.totalBalances = encodeAmount(uint(assetCache.totalBalances) + amount);
+ 357 |     | 
+ 358 |     |         updateInterestRate(assetStorage, assetCache);
+ 359 |     | 
+ 360 |     |         emit Deposit(assetCache.underlying, account, amount);
+ 361 |     |         emitViaProxy_Transfer(eTokenAddress, address(0), account, amount);
+ 362 |     |     }
+ 363 |     | 
+ 364 |     |     function decreaseBalance(AssetStorage storage assetStorage, AssetCache memory assetCache, address eTokenAddress, address account, uint amount) internal {
+ 365 |     |         uint origBalance = assetStorage.users[account].balance;
+ 366 |     |         require(origBalance >= amount, "e/insufficient-balance");
+ 367 |     |         assetStorage.users[account].balance = encodeAmount(origBalance - amount);
+ 368 |     | 
+ 369 |     |         assetStorage.totalBalances = assetCache.totalBalances = encodeAmount(assetCache.totalBalances - amount);
+ 370 |     | 
+ 371 |     |         updateInterestRate(assetStorage, assetCache);
+ 372 |     | 
+ 373 |     |         emit Withdraw(assetCache.underlying, account, amount);
+ 374 |     |         emitViaProxy_Transfer(eTokenAddress, account, address(0), amount);
+ 375 |     |     }
+ 376 |     | 
+ 377 |     |     function transferBalance(AssetStorage storage assetStorage, AssetCache memory assetCache, address eTokenAddress, address from, address to, uint amount) internal {
+ 378 |     |         uint origFromBalance = assetStorage.users[from].balance;
+ 379 |     |         require(origFromBalance >= amount, "e/insufficient-balance");
+ 380 |     |         uint newFromBalance;
+ 381 |     |         unchecked { newFromBalance = origFromBalance - amount; }
+ 382 |     | 
+ 383 |     |         assetStorage.users[from].balance = encodeAmount(newFromBalance);
+ 384 |     |         assetStorage.users[to].balance = encodeAmount(assetStorage.users[to].balance + amount);
+ 385 |     | 
+ 386 |     |         emit Withdraw(assetCache.underlying, from, amount);
+ 387 |     |         emit Deposit(assetCache.underlying, to, amount);
+ 388 |     |         emitViaProxy_Transfer(eTokenAddress, from, to, amount);
+ 389 |     |     }
+ 390 |     | 
+ 391 |     |     function withdrawAmounts(AssetStorage storage assetStorage, AssetCache memory assetCache, address account, uint amount) internal view returns (uint, uint) {
+ 392 |     |         uint amountInternal;
+ 393 |     |         if (amount == type(uint).max) {
+ 394 |     |             amountInternal = assetStorage.users[account].balance;
+ 395 |     |             amount = balanceToUnderlyingAmount(assetCache, amountInternal);
+ 396 |     |         } else {
+ 397 |     |             amount = decodeExternalAmount(assetCache, amount);
+ 398 |     |             amountInternal = underlyingAmountToBalanceRoundUp(assetCache, amount);
+ 399 |     |         }
+ 400 |     | 
+ 401 |     |         return (amount, amountInternal);
+ 402 |     |     }
+ 403 |     | 
+ 404 |     |     // Borrows
+ 405 |     | 
+ 406 |     |     // Returns internal precision
+ 407 |     | 
+ 408 |     |     function getCurrentOwedExact(AssetStorage storage assetStorage, AssetCache memory assetCache, address account, uint owed) internal view returns (uint) {
+ 409 |     |         // Don't bother loading the user's accumulator
+ 410 |     |         if (owed == 0) return 0;
+ 411 |     | 
+ 412 |     |         // Can't divide by 0 here: If owed is non-zero, we must've initialised the user's interestAccumulator
+ 413 |     |         return owed * assetCache.interestAccumulator / assetStorage.users[account].interestAccumulator;
+ 414 |     |     }
+ 415 |     | 
+ 416 |     |     // When non-zero, we round *up* to the smallest external unit so that outstanding dust in a loan can be repaid.
+ 417 |     |     // unchecked is OK here since owed is always loaded from storage, so we know it fits into a uint144 (pre-interest accural)
+ 418 |     |     // Takes and returns 27 decimals precision.
+ 419 |     | 
+ 420 |     |     function roundUpOwed(AssetCache memory assetCache, uint owed) private pure returns (uint) {
+ 421 |     |         if (owed == 0) return 0;
+ 422 |     | 
+ 423 |     |         unchecked {
+ 424 |     |             uint scale = INTERNAL_DEBT_PRECISION * assetCache.underlyingDecimalsScaler;
+ 425 |     |             return (owed + scale - 1) / scale * scale;
+ 426 |     |         }
+ 427 |     |     }
+ 428 |     | 
+ 429 |     |     // Returns 18-decimals precision (debt amount is rounded up)
+ 430 |     | 
+ 431 |     |     function getCurrentOwed(AssetStorage storage assetStorage, AssetCache memory assetCache, address account) internal view returns (uint) {
+ 432 |     |         return roundUpOwed(assetCache, getCurrentOwedExact(assetStorage, assetCache, account, assetStorage.users[account].owed)) / INTERNAL_DEBT_PRECISION;
+ 433 |     |     }
+ 434 |     | 
+ 435 |     |     function updateUserBorrow(AssetStorage storage assetStorage, AssetCache memory assetCache, address account) private returns (uint newOwedExact, uint prevOwedExact) {
+ 436 |     |         prevOwedExact = assetStorage.users[account].owed;
+ 437 |     | 
+ 438 |     |         newOwedExact = getCurrentOwedExact(assetStorage, assetCache, account, prevOwedExact);
+ 439 |     | 
+ 440 |     |         assetStorage.users[account].owed = encodeDebtAmount(newOwedExact);
+ 441 |     |         assetStorage.users[account].interestAccumulator = assetCache.interestAccumulator;
+ 442 |     |     }
+ 443 |     | 
+ 444 |     |     function logBorrowChange(AssetCache memory assetCache, address dTokenAddress, address account, uint prevOwed, uint owed) private {
+ 445 |     |         prevOwed = roundUpOwed(assetCache, prevOwed) / INTERNAL_DEBT_PRECISION;
+ 446 |     |         owed = roundUpOwed(assetCache, owed) / INTERNAL_DEBT_PRECISION;
+ 447 |     | 
+ 448 |     |         if (owed > prevOwed) {
+ 449 |     |             uint change = owed - prevOwed;
+ 450 |     |             emit Borrow(assetCache.underlying, account, change);
+ 451 |     |             emitViaProxy_Transfer(dTokenAddress, address(0), account, change / assetCache.underlyingDecimalsScaler);
+ 452 |     |         } else if (prevOwed > owed) {
+ 453 |     |             uint change = prevOwed - owed;
+ 454 |     |             emit Repay(assetCache.underlying, account, change);
+ 455 |     |             emitViaProxy_Transfer(dTokenAddress, account, address(0), change / assetCache.underlyingDecimalsScaler);
+ 456 |     |         }
+ 457 |     |     }
+ 458 |     | 
+ 459 |     |     function increaseBorrow(AssetStorage storage assetStorage, AssetCache memory assetCache, address dTokenAddress, address account, uint amount) internal {
+ 460 |     |         amount *= INTERNAL_DEBT_PRECISION;
+ 461 |     | 
+ 462 |     |         require(assetCache.pricingType != PRICINGTYPE__FORWARDED || pTokenLookup[assetCache.underlying] == address(0), "e/borrow-not-supported");
+ 463 |     | 
+ 464 |     |         (uint owed, uint prevOwed) = updateUserBorrow(assetStorage, assetCache, account);
+ 465 |     | 
+ 466 |     |         if (owed == 0) doEnterMarket(account, assetCache.underlying);
+ 467 |     | 
+ 468 |     |         owed += amount;
+ 469 |     | 
+ 470 |     |         assetStorage.users[account].owed = encodeDebtAmount(owed);
+ 471 |     |         assetStorage.totalBorrows = assetCache.totalBorrows = encodeDebtAmount(assetCache.totalBorrows + amount);
+ 472 |     | 
+ 473 |     |         updateInterestRate(assetStorage, assetCache);
+ 474 |     | 
+ 475 |     |         logBorrowChange(assetCache, dTokenAddress, account, prevOwed, owed);
+ 476 |     |     }
+ 477 |     | 
+ 478 |     |     function decreaseBorrow(AssetStorage storage assetStorage, AssetCache memory assetCache, address dTokenAddress, address account, uint origAmount) internal {
+ 479 |     |         uint amount = origAmount * INTERNAL_DEBT_PRECISION;
+ 480 |     | 
+ 481 |     |         (uint owed, uint prevOwed) = updateUserBorrow(assetStorage, assetCache, account);
+ 482 |     |         uint owedRoundedUp = roundUpOwed(assetCache, owed);
+ 483 |     | 
+ 484 |     |         require(amount <= owedRoundedUp, "e/repay-too-much");
+ 485 |     |         uint owedRemaining;
+ 486 |     |         unchecked { owedRemaining = owedRoundedUp - amount; }
+ 487 |     | 
+ 488 |     |         if (owed > assetCache.totalBorrows) owed = assetCache.totalBorrows;
+ 489 |     | 
+ 490 |     |         assetStorage.users[account].owed = encodeDebtAmount(owedRemaining);
+ 491 |     |         assetStorage.totalBorrows = assetCache.totalBorrows = encodeDebtAmount(assetCache.totalBorrows - owed + owedRemaining);
+ 492 |     | 
+ 493 |     |         updateInterestRate(assetStorage, assetCache);
+ 494 |     | 
+ 495 |     |         logBorrowChange(assetCache, dTokenAddress, account, prevOwed, owedRemaining);
+ 496 |     |     }
+ 497 |     | 
+ 498 |     |     function transferBorrow(AssetStorage storage assetStorage, AssetCache memory assetCache, address dTokenAddress, address from, address to, uint origAmount) internal {
+ 499 |     |         uint amount = origAmount * INTERNAL_DEBT_PRECISION;
+ 500 |     | 
+ 501 |     |         (uint fromOwed, uint fromOwedPrev) = updateUserBorrow(assetStorage, assetCache, from);
+ 502 |     |         (uint toOwed, uint toOwedPrev) = updateUserBorrow(assetStorage, assetCache, to);
+ 503 |     | 
+ 504 |     |         if (toOwed == 0) doEnterMarket(to, assetCache.underlying);
+ 505 |     | 
+ 506 |     |         // If amount was rounded up, transfer exact amount owed
+ 507 |     |         if (amount > fromOwed && amount - fromOwed < INTERNAL_DEBT_PRECISION * assetCache.underlyingDecimalsScaler) amount = fromOwed;
+ 508 |     | 
+ 509 |     |         require(fromOwed >= amount, "e/insufficient-balance");
+ 510 |     |         unchecked { fromOwed -= amount; }
+ 511 |     | 
+ 512 |     |         // Transfer any residual dust
+ 513 |     |         if (fromOwed < INTERNAL_DEBT_PRECISION) {
+ 514 |     |             amount += fromOwed;
+ 515 |     |             fromOwed = 0;
+ 516 |     |         }
+ 517 |     | 
+ 518 |     |         toOwed += amount;
+ 519 |     | 
+ 520 |     |         assetStorage.users[from].owed = encodeDebtAmount(fromOwed);
+ 521 |     |         assetStorage.users[to].owed = encodeDebtAmount(toOwed);
+ 522 |     | 
+ 523 |     |         logBorrowChange(assetCache, dTokenAddress, from, fromOwedPrev, fromOwed);
+ 524 |     |         logBorrowChange(assetCache, dTokenAddress, to, toOwedPrev, toOwed);
+ 525 |     |     }
+ 526 |     | 
+ 527 |     | 
+ 528 |     | 
+ 529 |     |     // Reserves
+ 530 |     | 
+ 531 |     |     function increaseReserves(AssetStorage storage assetStorage, AssetCache memory assetCache, uint amount) internal {
+ 532 |     |         uint newReserveBalance = assetCache.reserveBalance + amount;
+ 533 |     |         uint newTotalBalances = assetCache.totalBalances + amount;
+ 534 |     | 
+ 535 |     |         if (newReserveBalance <= MAX_SANE_SMALL_AMOUNT && newTotalBalances <= MAX_SANE_AMOUNT) {
+ 536 |     |             assetStorage.reserveBalance = assetCache.reserveBalance = encodeSmallAmount(newReserveBalance);
+ 537 |     |             assetStorage.totalBalances = assetCache.totalBalances = encodeAmount(newTotalBalances);
+ 538 |     |         }
+ 539 |     |     }
+ 540 |     | 
+ 541 |     | 
+ 542 |     | 
+ 543 |     |     // Token asset transfers
+ 544 |     | 
+ 545 |     |     // amounts are in underlying units
+ 546 |     | 
+ 547 |     |     function pullTokens(AssetCache memory assetCache, address from, uint amount) internal returns (uint amountTransferred) {
+ 548 |     |         uint poolSizeBefore = assetCache.poolSize;
+ 549 |     | 
+ 550 |     |         Utils.safeTransferFrom(assetCache.underlying, from, address(this), amount / assetCache.underlyingDecimalsScaler);
+ 551 |     |         uint poolSizeAfter = assetCache.poolSize = decodeExternalAmount(assetCache, callBalanceOf(assetCache, address(this)));
+ 552 |     | 
+ 553 |     |         require(poolSizeAfter >= poolSizeBefore, "e/negative-transfer-amount");
+ 554 |     |         unchecked { amountTransferred = poolSizeAfter - poolSizeBefore; }
+ 555 |     |     }
+ 556 |     | 
+ 557 |     |     function pushTokens(AssetCache memory assetCache, address to, uint amount) internal returns (uint amountTransferred) {
+ 558 |     |         uint poolSizeBefore = assetCache.poolSize;
+ 559 |     | 
+ 560 |     |         Utils.safeTransfer(assetCache.underlying, to, amount / assetCache.underlyingDecimalsScaler);
+ 561 |     |         uint poolSizeAfter = assetCache.poolSize = decodeExternalAmount(assetCache, callBalanceOf(assetCache, address(this)));
+ 562 |     | 
+ 563 |     |         require(poolSizeBefore >= poolSizeAfter, "e/negative-transfer-amount");
+ 564 |     |         unchecked { amountTransferred = poolSizeBefore - poolSizeAfter; }
+ 565 |     |     }
+ 566 |     | 
+ 567 |     | 
+ 568 |     | 
+ 569 |     | 
+ 570 |     |     // Liquidity
+ 571 |     | 
+ 572 |     |     function getAssetPrice(address asset) internal returns (uint) {
+ 573 |     |         bytes memory result = callInternalModule(MODULEID__RISK_MANAGER, abi.encodeWithSelector(IRiskManager.getPrice.selector, asset));
+ 574 |     |         return abi.decode(result, (uint));
+ 575 |     |     }
+ 576 |     | 
+ 577 |     |     function getAccountLiquidity(address account) internal returns (uint collateralValue, uint liabilityValue) {
+ 578 |     |         bytes memory result = callInternalModule(MODULEID__RISK_MANAGER, abi.encodeWithSelector(IRiskManager.computeLiquidity.selector, account));
+ 579 |     |         (IRiskManager.LiquidityStatus memory status) = abi.decode(result, (IRiskManager.LiquidityStatus));
+ 580 |     | 
+ 581 |     |         collateralValue = status.collateralValue;
+ 582 |     |         liabilityValue = status.liabilityValue;
+ 583 |     |     }
+ 584 |     | 
+ 585 |     |     function checkLiquidity(address account) internal {
+ 586 |     |         uint8 status = accountLookup[account].deferLiquidityStatus;
+ 587 |     | 
+ 588 |     |         if (status == DEFERLIQUIDITY__NONE) {
+ 589 |     |             callInternalModule(MODULEID__RISK_MANAGER, abi.encodeWithSelector(IRiskManager.requireLiquidity.selector, account));
+ 590 |     |         } else if (status == DEFERLIQUIDITY__CLEAN) {
+ 591 |     |             accountLookup[account].deferLiquidityStatus = DEFERLIQUIDITY__DIRTY;
+ 592 |     |         }
+ 593 |     |     }
+ 594 |     | 
+ 595 |     | 
+ 596 |     | 
+ 597 |     |     // Optional average liquidity tracking
+ 598 |     | 
+ 599 |     |     function computeNewAverageLiquidity(address account, uint deltaT) private returns (uint) {
+ 600 |     |         uint currDuration = deltaT >= AVERAGE_LIQUIDITY_PERIOD ? AVERAGE_LIQUIDITY_PERIOD : deltaT;
+ 601 |     |         uint prevDuration = AVERAGE_LIQUIDITY_PERIOD - currDuration;
+ 602 |     | 
+ 603 |     |         uint currAverageLiquidity;
+ 604 |     | 
+ 605 |     |         {
+ 606 |     |             (uint collateralValue, uint liabilityValue) = getAccountLiquidity(account);
+ 607 |     |             currAverageLiquidity = collateralValue > liabilityValue ? collateralValue - liabilityValue : 0;
+ 608 |     |         }
+ 609 |     | 
+ 610 |     |         return (accountLookup[account].averageLiquidity * prevDuration / AVERAGE_LIQUIDITY_PERIOD) +
+ 611 |     |                (currAverageLiquidity * currDuration / AVERAGE_LIQUIDITY_PERIOD);
+ 612 |     |     }
+ 613 |     | 
+ 614 |     |     function getUpdatedAverageLiquidity(address account) internal returns (uint) {
+ 615 |     |         uint lastAverageLiquidityUpdate = accountLookup[account].lastAverageLiquidityUpdate;
+ 616 |     |         if (lastAverageLiquidityUpdate == 0) return 0;
+ 617 |     | 
+ 618 |     |         uint deltaT = block.timestamp - lastAverageLiquidityUpdate;
+ 619 |     |         if (deltaT == 0) return accountLookup[account].averageLiquidity;
+ 620 |     | 
+ 621 |     |         return computeNewAverageLiquidity(account, deltaT);
+ 622 |     |     }
+ 623 |     | 
+ 624 |     |     function getUpdatedAverageLiquidityWithDelegate(address account) internal returns (uint) {
+ 625 |     |         address delegate = accountLookup[account].averageLiquidityDelegate;
+ 626 |     | 
+ 627 |     |         return delegate != address(0) && accountLookup[delegate].averageLiquidityDelegate == account
+ 628 |     |             ? getUpdatedAverageLiquidity(delegate)
+ 629 |     |             : getUpdatedAverageLiquidity(account);
+ 630 |     |     }
+ 631 |     | 
+ 632 |     |     function updateAverageLiquidity(address account) internal {
+ 633 |     |         uint lastAverageLiquidityUpdate = accountLookup[account].lastAverageLiquidityUpdate;
+ 634 |     |         if (lastAverageLiquidityUpdate == 0) return;
+ 635 |     | 
+ 636 |     |         uint deltaT = block.timestamp - lastAverageLiquidityUpdate;
+ 637 |     |         if (deltaT == 0) return;
+ 638 |     | 
+ 639 |     |         accountLookup[account].lastAverageLiquidityUpdate = uint40(block.timestamp);
+ 640 |     |         accountLookup[account].averageLiquidity = computeNewAverageLiquidity(account, deltaT);
+ 641 |     |     }
+ 642 |     | }
+ 643 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/BaseModule.sol
+  1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+  2 |     | 
+  3 |     | pragma solidity ^0.8.0;
+  4 |     | 
+  5 |     | import "./Base.sol";
+  6 |     | 
+  7 |     | 
+  8 |     | abstract contract BaseModule is Base {
+  9 |     |     // Construction
+ 10 |     | 
+ 11 |     |     // public accessors common to all modules
+ 12 |     | 
+ 13 |     |     uint immutable public moduleId;
+ 14 |     |     bytes32 immutable public moduleGitCommit;
+ 15 |     | 
+ 16 |     |     constructor(uint moduleId_, bytes32 moduleGitCommit_) {
+ 17 |     |         moduleId = moduleId_;
+ 18 |     |         moduleGitCommit = moduleGitCommit_;
+ 19 |     |     }
+ 20 |     | 
+ 21 |     | 
+ 22 |     |     // Accessing parameters
+ 23 |     | 
+ 24 |     |     function unpackTrailingParamMsgSender() internal pure returns (address msgSender) {
+ 25 |     |         assembly {
+ 26 |     |             msgSender := shr(96, calldataload(sub(calldatasize(), 40)))
+ 27 |     |         }
+ 28 |     |     }
+ 29 |     | 
+ 30 |     |     function unpackTrailingParams() internal pure returns (address msgSender, address proxyAddr) {
+ 31 |     |         assembly {
+ 32 |     |             msgSender := shr(96, calldataload(sub(calldatasize(), 40)))
+ 33 |     |             proxyAddr := shr(96, calldataload(sub(calldatasize(), 20)))
+ 34 |     |         }
+ 35 |     |     }
+ 36 |     | 
+ 37 |     | 
+ 38 |     |     // Emit logs via proxies
+ 39 |     | 
+ 40 |     |     function emitViaProxy_Transfer(address proxyAddr, address from, address to, uint value) internal FREEMEM {
+ 41 |     |         (bool success,) = proxyAddr.call(abi.encodePacked(
+ 42 |     |                                uint8(3),
+ 43 |     |                                keccak256(bytes('Transfer(address,address,uint256)')),
+ 44 |     |                                bytes32(uint(uint160(from))),
+ 45 |     |                                bytes32(uint(uint160(to))),
+ 46 |     |                                value
+ 47 |     |                           ));
+ 48 |     |         require(success, "e/log-proxy-fail");
+ 49 |     |     }
+ 50 |     | 
+ 51 |     |     function emitViaProxy_Approval(address proxyAddr, address owner, address spender, uint value) internal FREEMEM {
+ 52 |     |         (bool success,) = proxyAddr.call(abi.encodePacked(
+ 53 |     |                                uint8(3),
+ 54 |     |                                keccak256(bytes('Approval(address,address,uint256)')),
+ 55 |     |                                bytes32(uint(uint160(owner))),
+ 56 |     |                                bytes32(uint(uint160(spender))),
+ 57 |     |                                value
+ 58 |     |                           ));
+ 59 |     |         require(success, "e/log-proxy-fail");
+ 60 |     |     }
+ 61 |     | }
+ 62 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/Constants.sol
+   1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+   2 |     | 
+   3 |     | pragma solidity ^0.8.0;
+   4 |     | 
+   5 |     | abstract contract Constants {
+   6 |     |     // Universal
+   7 |     | 
+   8 |     |     uint internal constant SECONDS_PER_YEAR = 365.2425 * 86400; // Gregorian calendar
+   9 |     | 
+  10 |     | 
+  11 |     |     // Protocol parameters
+  12 |     | 
+  13 |     |     uint internal constant MAX_SANE_AMOUNT = type(uint112).max;
+  14 |     |     uint internal constant MAX_SANE_SMALL_AMOUNT = type(uint96).max;
+  15 |     |     uint internal constant MAX_SANE_DEBT_AMOUNT = type(uint144).max;
+  16 |     |     uint internal constant INTERNAL_DEBT_PRECISION = 1e9;
+  17 |     |     uint internal constant MAX_ENTERED_MARKETS = 10; // per sub-account
+  18 |     |     uint internal constant MAX_POSSIBLE_ENTERED_MARKETS = 2**32; // limited by size of AccountStorage.numMarketsEntered
+  19 |     |     uint internal constant CONFIG_FACTOR_SCALE = 4_000_000_000; // must fit into a uint32
+  20 |     |     uint internal constant RESERVE_FEE_SCALE = 4_000_000_000; // must fit into a uint32
+  21 |     |     uint32 internal constant DEFAULT_RESERVE_FEE = uint32(0.23 * 4_000_000_000);
+  22 |     |     uint internal constant INITIAL_RESERVES = 1e6;
+  23 |     |     uint internal constant INITIAL_INTEREST_ACCUMULATOR = 1e27;
+  24 |     |     uint internal constant AVERAGE_LIQUIDITY_PERIOD = 24 * 60 * 60;
+  25 |     |     uint16 internal constant MIN_UNISWAP3_OBSERVATION_CARDINALITY = 144;
+  26 |     |     uint24 internal constant DEFAULT_TWAP_WINDOW_SECONDS = 30 * 60;
+  27 |     |     uint32 internal constant DEFAULT_BORROW_FACTOR = uint32(0.28 * 4_000_000_000);
+  28 |     |     uint32 internal constant SELF_COLLATERAL_FACTOR = uint32(0.95 * 4_000_000_000);
+  29 |     | 
+  30 |     | 
+  31 |     |     // Implementation internals
+  32 |     | 
+  33 |     |     uint internal constant REENTRANCYLOCK__UNLOCKED = 1;
+  34 |     |     uint internal constant REENTRANCYLOCK__LOCKED = 2;
+  35 |     | 
+  36 |     |     uint8 internal constant DEFERLIQUIDITY__NONE = 0;
+  37 |     |     uint8 internal constant DEFERLIQUIDITY__CLEAN = 1;
+  38 |     |     uint8 internal constant DEFERLIQUIDITY__DIRTY = 2;
+  39 |     | 
+  40 |     | 
+  41 |     |     // Pricing types
+  42 |     | 
+  43 |     |     uint16 internal constant PRICINGTYPE__PEGGED = 1;
+  44 |     |     uint16 internal constant PRICINGTYPE__UNISWAP3_TWAP = 2;
+  45 |     |     uint16 internal constant PRICINGTYPE__FORWARDED = 3;
+  46 |     |     uint16 internal constant PRICINGTYPE__CHAINLINK = 4;
+  47 |     | 
+  48 |     |     // Correct pricing types are always less than this value
+  49 |     |     uint16 internal constant PRICINGTYPE__OUT_OF_BOUNDS = 5;
+  50 |     | 
+  51 |     | 
+  52 |     |     // Modules
+  53 |     | 
+  54 |     |     // Public single-proxy modules
+  55 |     |     uint internal constant MODULEID__INSTALLER = 1;
+  56 |     |     uint internal constant MODULEID__MARKETS = 2;
+  57 |     |     uint internal constant MODULEID__LIQUIDATION = 3;
+  58 |     |     uint internal constant MODULEID__GOVERNANCE = 4;
+  59 |     |     uint internal constant MODULEID__EXEC = 5;
+  60 |     |     uint internal constant MODULEID__SWAP = 6;
+  61 |     |     uint internal constant MODULEID__SWAPHUB = 7;
+  62 |     | 
+  63 |     |     uint internal constant MAX_EXTERNAL_SINGLE_PROXY_MODULEID = 499_999;
+  64 |     | 
+  65 |     |     // Public multi-proxy modules
+  66 |     |     uint internal constant MODULEID__ETOKEN = 500_000;
+  67 |     |     uint internal constant MODULEID__DTOKEN = 500_001;
+  68 |     | 
+  69 |     |     uint internal constant MAX_EXTERNAL_MODULEID = 999_999;
+  70 |     | 
+  71 |     |     // Internal modules
+  72 |     |     uint internal constant MODULEID__RISK_MANAGER = 1_000_000;
+  73 |     | 
+  74 |     |     // Interest rate models
+  75 |     |     //   Default for new markets
+  76 |     |     uint internal constant MODULEID__IRM_DEFAULT = 2_000_000;
+  77 |     |     //   Testing-only
+  78 |     |     uint internal constant MODULEID__IRM_ZERO = 2_000_001;
+  79 |     |     uint internal constant MODULEID__IRM_FIXED = 2_000_002;
+  80 |     |     uint internal constant MODULEID__IRM_LINEAR = 2_000_100;
+  81 |     |     //   Classes
+  82 |     |     uint internal constant MODULEID__IRM_CLASS__STABLE = 2_000_500;
+  83 |     |     uint internal constant MODULEID__IRM_CLASS__MAJOR = 2_000_501;
+  84 |     |     uint internal constant MODULEID__IRM_CLASS__MIDCAP = 2_000_502;
+  85 |     |     uint internal constant MODULEID__IRM_CLASS__MEGA = 2_000_503;
+  86 |     |     uint internal constant MODULEID__IRM_CLASS__LIDO = 2_000_504;
+  87 |     |     uint internal constant MODULEID__IRM_CLASS__USDT = 2_000_505;
+  88 |     |     uint internal constant MODULEID__IRM_CLASS__OHM = 2_000_506;
+  89 |     | 
+  90 |     |     // Swap types
+  91 |     |     uint internal constant SWAP_TYPE__UNI_EXACT_INPUT_SINGLE = 1;
+  92 |     |     uint internal constant SWAP_TYPE__UNI_EXACT_INPUT = 2;
+  93 |     |     uint internal constant SWAP_TYPE__UNI_EXACT_OUTPUT_SINGLE = 3;
+  94 |     |     uint internal constant SWAP_TYPE__UNI_EXACT_OUTPUT = 4;
+  95 |     |     uint internal constant SWAP_TYPE__1INCH = 5;
+  96 |     | 
+  97 |     |     uint internal constant SWAP_TYPE__UNI_EXACT_OUTPUT_SINGLE_REPAY = 6;
+  98 |     |     uint internal constant SWAP_TYPE__UNI_EXACT_OUTPUT_REPAY = 7;
+  99 |     | }
+ 100 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/Euler.sol
+  1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+  2 |     | 
+  3 |     | pragma solidity ^0.8.0;
+  4 |     | 
+  5 |     | import "./Base.sol";
+  6 |     | 
+  7 |     | 
+  8 |     | /// @notice Main storage contract for the Euler system
+  9 |     | contract Euler is Base {
+ 10 |     |     constructor(address admin, address installerModule) {
+ 11 |     |         emit Genesis();
+ 12 |     | 
+ 13 |     |         reentrancyLock = REENTRANCYLOCK__UNLOCKED;
+ 14 |     |         upgradeAdmin = admin;
+ 15 |     |         governorAdmin = admin;
+ 16 |     | 
+ 17 |     |         moduleLookup[MODULEID__INSTALLER] = installerModule;
+ 18 |     |         address installerProxy = _createProxy(MODULEID__INSTALLER);
+ 19 |     |         trustedSenders[installerProxy].moduleImpl = installerModule;
+ 20 |     |     }
+ 21 |     | 
+ 22 |     |     string public constant name = "Euler Protocol";
+ 23 |     | 
+ 24 |     |     /// @notice Lookup the current implementation contract for a module
+ 25 |     |     /// @param moduleId Fixed constant that refers to a module type (ie MODULEID__ETOKEN)
+ 26 |     |     /// @return An internal address specifies the module's implementation code
+ 27 |     |     function moduleIdToImplementation(uint moduleId) external view returns (address) {
+ 28 |     |         return moduleLookup[moduleId];
+ 29 |     |     }
+ 30 |     | 
+ 31 |     |     /// @notice Lookup a proxy that can be used to interact with a module (only valid for single-proxy modules)
+ 32 |     |     /// @param moduleId Fixed constant that refers to a module type (ie MODULEID__MARKETS)
+ 33 |     |     /// @return An address that should be cast to the appropriate module interface, ie IEulerMarkets(moduleIdToProxy(2))
+ 34 |     |     function moduleIdToProxy(uint moduleId) external view returns (address) {
+ 35 |     |         return proxyLookup[moduleId];
+ 36 |     |     }
+ 37 |     | 
+ 38 |     |     function dispatch() external reentrantOK {
+ 39 |     |         uint32 moduleId = trustedSenders[msg.sender].moduleId;
+ 40 |     |         address moduleImpl = trustedSenders[msg.sender].moduleImpl;
+ 41 |     | 
+ 42 |     |         require(moduleId != 0, "e/sender-not-trusted");
+ 43 |     | 
+ 44 |     |         if (moduleImpl == address(0)) moduleImpl = moduleLookup[moduleId];
+ 45 |     | 
+ 46 |     |         uint msgDataLength = msg.data.length;
+ 47 |     |         require(msgDataLength >= (4 + 4 + 20), "e/input-too-short");
+ 48 |     | 
+ 49 |     |         assembly {
+ 50 |     |             let payloadSize := sub(calldatasize(), 4)
+ 51 |     |             calldatacopy(0, 4, payloadSize)
+ 52 |     |             mstore(payloadSize, shl(96, caller()))
+ 53 |     | 
+ 54 |     |             let result := delegatecall(gas(), moduleImpl, 0, add(payloadSize, 20), 0, 0)
+ 55 |     | 
+ 56 |     |             returndatacopy(0, 0, returndatasize())
+ 57 |     | 
+ 58 |     |             switch result
+ 59 |     |                 case 0 { revert(0, returndatasize()) }
+ 60 |     |                 default { return(0, returndatasize()) }
+ 61 |     |         }
+ 62 |     |     }
+ 63 |     | }
+ 64 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/Events.sol
+  1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+  2 |     | 
+  3 |     | pragma solidity ^0.8.0;
+  4 |     | 
+  5 |     | import "./Storage.sol";
+  6 |     | 
+  7 |     | abstract contract Events {
+  8 |     |     event Genesis();
+  9 |     | 
+ 10 |     | 
+ 11 |     |     event ProxyCreated(address indexed proxy, uint moduleId);
+ 12 |     |     event MarketActivated(address indexed underlying, address indexed eToken, address indexed dToken);
+ 13 |     |     event PTokenActivated(address indexed underlying, address indexed pToken);
+ 14 |     | 
+ 15 |     |     event EnterMarket(address indexed underlying, address indexed account);
+ 16 |     |     event ExitMarket(address indexed underlying, address indexed account);
+ 17 |     | 
+ 18 |     |     event Deposit(address indexed underlying, address indexed account, uint amount);
+ 19 |     |     event Withdraw(address indexed underlying, address indexed account, uint amount);
+ 20 |     |     event Borrow(address indexed underlying, address indexed account, uint amount);
+ 21 |     |     event Repay(address indexed underlying, address indexed account, uint amount);
+ 22 |     | 
+ 23 |     |     event Liquidation(address indexed liquidator, address indexed violator, address indexed underlying, address collateral, uint repay, uint yield, uint healthScore, uint baseDiscount, uint discount);
+ 24 |     | 
+ 25 |     |     event TrackAverageLiquidity(address indexed account);
+ 26 |     |     event UnTrackAverageLiquidity(address indexed account);
+ 27 |     |     event DelegateAverageLiquidity(address indexed account, address indexed delegate);
+ 28 |     | 
+ 29 |     |     event PTokenWrap(address indexed underlying, address indexed account, uint amount);
+ 30 |     |     event PTokenUnWrap(address indexed underlying, address indexed account, uint amount);
+ 31 |     | 
+ 32 |     |     event AssetStatus(address indexed underlying, uint totalBalances, uint totalBorrows, uint96 reserveBalance, uint poolSize, uint interestAccumulator, int96 interestRate, uint timestamp);
+ 33 |     | 
+ 34 |     | 
+ 35 |     |     event RequestDeposit(address indexed account, uint amount);
+ 36 |     |     event RequestWithdraw(address indexed account, uint amount);
+ 37 |     |     event RequestMint(address indexed account, uint amount);
+ 38 |     |     event RequestBurn(address indexed account, uint amount);
+ 39 |     |     event RequestTransferEToken(address indexed from, address indexed to, uint amount);
+ 40 |     |     event RequestDonate(address indexed account, uint amount);
+ 41 |     | 
+ 42 |     |     event RequestBorrow(address indexed account, uint amount);
+ 43 |     |     event RequestRepay(address indexed account, uint amount);
+ 44 |     |     event RequestTransferDToken(address indexed from, address indexed to, uint amount);
+ 45 |     | 
+ 46 |     |     event RequestLiquidate(address indexed liquidator, address indexed violator, address indexed underlying, address collateral, uint repay, uint minYield);
+ 47 |     | 
+ 48 |     | 
+ 49 |     |     event InstallerSetUpgradeAdmin(address indexed newUpgradeAdmin);
+ 50 |     |     event InstallerSetGovernorAdmin(address indexed newGovernorAdmin);
+ 51 |     |     event InstallerInstallModule(uint indexed moduleId, address indexed moduleImpl, bytes32 moduleGitCommit);
+ 52 |     | 
+ 53 |     | 
+ 54 |     |     event GovSetAssetConfig(address indexed underlying, Storage.AssetConfig newConfig);
+ 55 |     |     event GovSetIRM(address indexed underlying, uint interestRateModel, bytes resetParams);
+ 56 |     |     event GovSetPricingConfig(address indexed underlying, uint16 newPricingType, uint32 newPricingParameter);
+ 57 |     |     event GovSetReserveFee(address indexed underlying, uint32 newReserveFee);
+ 58 |     |     event GovConvertReserves(address indexed underlying, address indexed recipient, uint amount);
+ 59 |     |     event GovSetChainlinkPriceFeed(address indexed underlying, address chainlinkAggregator);
+ 60 |     | 
+ 61 |     |     event RequestSwap(address indexed accountIn, address indexed accountOut, address indexed underlyingIn, address underlyingOut, uint amount, uint swapType);
+ 62 |     |     event RequestSwapHub(address indexed accountIn, address indexed accountOut, address indexed underlyingIn, address underlyingOut, uint amountIn, uint amountOut, uint mode, address swapHandler);
+ 63 |     |     event RequestSwapHubRepay(address indexed accountIn, address indexed accountOut, address indexed underlyingIn, address underlyingOut, uint targetDebt, address swapHandler);
+ 64 |     | }
+ 65 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/IRiskManager.sol
+  1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+  2 |     | 
+  3 |     | pragma solidity ^0.8.0;
+  4 |     | 
+  5 |     | import "./Storage.sol";
+  6 |     | 
+  7 |     | // This interface is used to avoid a circular dependency between BaseLogic and RiskManager
+  8 |     | 
+  9 |     | interface IRiskManager {
+ 10 |     |     struct NewMarketParameters {
+ 11 |     |         uint16 pricingType;
+ 12 |     |         uint32 pricingParameters;
+ 13 |     | 
+ 14 |     |         Storage.AssetConfig config;
+ 15 |     |     }
+ 16 |     | 
+ 17 |     |     struct LiquidityStatus {
+ 18 |     |         uint collateralValue;
+ 19 |     |         uint liabilityValue;
+ 20 |     |         uint numBorrows;
+ 21 |     |         bool borrowIsolated;
+ 22 |     |     }
+ 23 |     | 
+ 24 |     |     struct AssetLiquidity {
+ 25 |     |         address underlying;
+ 26 |     |         LiquidityStatus status;
+ 27 |     |     }
+ 28 |     | 
+ 29 |     |     function getNewMarketParameters(address underlying) external returns (NewMarketParameters memory);
+ 30 |     | 
+ 31 |     |     function requireLiquidity(address account) external view;
+ 32 |     |     function computeLiquidity(address account) external view returns (LiquidityStatus memory status);
+ 33 |     |     function computeAssetLiquidities(address account) external view returns (AssetLiquidity[] memory assets);
+ 34 |     | 
+ 35 |     |     function getPrice(address underlying) external view returns (uint twap, uint twapPeriod);
+ 36 |     |     function getPriceFull(address underlying) external view returns (uint twap, uint twapPeriod, uint currPrice);
+ 37 |     | }
+ 38 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/Interfaces.sol
+  1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+  2 |     | 
+  3 |     | pragma solidity ^0.8.0;
+  4 |     | 
+  5 |     | 
+  6 |     | interface IERC20 {
+  7 |     |     event Approval(address indexed owner, address indexed spender, uint value);
+  8 |     |     event Transfer(address indexed from, address indexed to, uint value);
+  9 |     | 
+ 10 |     |     function name() external view returns (string memory);
+ 11 |     |     function symbol() external view returns (string memory);
+ 12 |     |     function decimals() external view returns (uint8);
+ 13 |     |     function totalSupply() external view returns (uint);
+ 14 |     |     function balanceOf(address owner) external view returns (uint);
+ 15 |     |     function allowance(address owner, address spender) external view returns (uint);
+ 16 |     | 
+ 17 |     |     function approve(address spender, uint value) external returns (bool);
+ 18 |     |     function transfer(address to, uint value) external returns (bool);
+ 19 |     |     function transferFrom(address from, address to, uint value) external returns (bool);
+ 20 |     | }
+ 21 |     | 
+ 22 |     | interface IERC20Permit {
+ 23 |     |     function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external;
+ 24 |     |     function permit(address holder, address spender, uint256 nonce, uint256 expiry, bool allowed, uint8 v, bytes32 r, bytes32 s) external;
+ 25 |     |     function permit(address owner, address spender, uint value, uint deadline, bytes calldata signature) external;
+ 26 |     | }
+ 27 |     | 
+ 28 |     | interface IERC3156FlashBorrower {
+ 29 |     |     function onFlashLoan(address initiator, address token, uint256 amount, uint256 fee, bytes calldata data) external returns (bytes32);
+ 30 |     | }
+ 31 |     | 
+ 32 |     | interface IERC3156FlashLender {
+ 33 |     |     function maxFlashLoan(address token) external view returns (uint256);
+ 34 |     |     function flashFee(address token, uint256 amount) external view returns (uint256);
+ 35 |     |     function flashLoan(IERC3156FlashBorrower receiver, address token, uint256 amount, bytes calldata data) external returns (bool);
+ 36 |     | }
+ 37 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/PToken.sol
+   1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+   2 |     | 
+   3 |     | pragma solidity ^0.8.0;
+   4 |     | 
+   5 |     | import "./Interfaces.sol";
+   6 |     | import "./Utils.sol";
+   7 |     | 
+   8 |     | /// @notice Protected Tokens are simple wrappers for tokens, allowing you to use tokens as collateral without permitting borrowing
+   9 |     | contract PToken {
+  10 |     |     address immutable euler;
+  11 |     |     address immutable underlyingToken;
+  12 |     | 
+  13 |     |     constructor(address euler_, address underlying_) {
+  14 |     |         euler = euler_;
+  15 |     |         underlyingToken = underlying_;
+  16 |     |     }
+  17 |     | 
+  18 |     | 
+  19 |     |     mapping(address => uint) balances;
+  20 |     |     mapping(address => mapping(address => uint)) allowances;
+  21 |     |     uint totalBalances;
+  22 |     | 
+  23 |     | 
+  24 |     |     event Approval(address indexed owner, address indexed spender, uint value);
+  25 |     |     event Transfer(address indexed from, address indexed to, uint value);
+  26 |     | 
+  27 |     | 
+  28 |     |     /// @notice PToken name, ie "Euler Protected DAI"
+  29 |     |     function name() external view returns (string memory) {
+  30 |     |         return string(abi.encodePacked("Euler Protected ", IERC20(underlyingToken).name()));
+  31 |     |     }
+  32 |     | 
+  33 |     |     /// @notice PToken symbol, ie "pDAI"
+  34 |     |     function symbol() external view returns (string memory) {
+  35 |     |         return string(abi.encodePacked("p", IERC20(underlyingToken).symbol()));
+  36 |     |     }
+  37 |     | 
+  38 |     |     /// @notice Number of decimals, which is same as the underlying's
+  39 |     |     function decimals() external view returns (uint8) {
+  40 |     |         return IERC20(underlyingToken).decimals();
+  41 |     |     }
+  42 |     | 
+  43 |     |     /// @notice Address of the underlying asset
+  44 |     |     function underlying() external view returns (address) {
+  45 |     |         return underlyingToken;
+  46 |     |     }
+  47 |     | 
+  48 |     | 
+  49 |     |     /// @notice Balance of an account's wrapped tokens
+  50 |     |     function balanceOf(address who) external view returns (uint) {
+  51 |     |         return balances[who];
+  52 |     |     }
+  53 |     | 
+  54 |     |     /// @notice Sum of all wrapped token balances
+  55 |     |     function totalSupply() external view returns (uint) {
+  56 |     |         return totalBalances;
+  57 |     |     }
+  58 |     | 
+  59 |     |     /// @notice Retrieve the current allowance
+  60 |     |     /// @param holder Address giving permission to access tokens
+  61 |     |     /// @param spender Trusted address
+  62 |     |     function allowance(address holder, address spender) external view returns (uint) {
+  63 |     |         return allowances[holder][spender];
+  64 |     |     }
+  65 |     | 
+  66 |     | 
+  67 |     |     /// @notice Transfer your own pTokens to another address
+  68 |     |     /// @param recipient Recipient address
+  69 |     |     /// @param amount Amount of wrapped token to transfer
+  70 |     |     function transfer(address recipient, uint amount) external returns (bool) {
+  71 |     |         return transferFrom(msg.sender, recipient, amount);
+  72 |     |     }
+  73 |     | 
+  74 |     |     /// @notice Transfer pTokens from one address to another. The euler address is automatically granted approval.
+  75 |     |     /// @param from This address must've approved the to address
+  76 |     |     /// @param recipient Recipient address
+  77 |     |     /// @param amount Amount to transfer
+  78 |     |     function transferFrom(address from, address recipient, uint amount) public returns (bool) {
+  79 |     |         require(balances[from] >= amount, "insufficient balance");
+  80 |     |         if (from != msg.sender && msg.sender != euler && allowances[from][msg.sender] != type(uint).max) {
+  81 |     |             require(allowances[from][msg.sender] >= amount, "insufficient allowance");
+  82 |     |             allowances[from][msg.sender] -= amount;
+  83 |     |             emit Approval(from, msg.sender, allowances[from][msg.sender]);
+  84 |     |         }
+  85 |     |         balances[from] -= amount;
+  86 |     |         balances[recipient] += amount;
+  87 |     |         emit Transfer(from, recipient, amount);
+  88 |     |         return true;
+  89 |     |     }
+  90 |     | 
+  91 |     |     /// @notice Allow spender to access an amount of your pTokens. It is not necessary to approve the euler address.
+  92 |     |     /// @param spender Trusted address
+  93 |     |     /// @param amount Use max uint256 for "infinite" allowance
+  94 |     |     function approve(address spender, uint amount) external returns (bool) {
+  95 |     |         allowances[msg.sender][spender] = amount;
+  96 |     |         emit Approval(msg.sender, spender, amount);
+  97 |     |         return true;
+  98 |     |     }
+  99 |     | 
+ 100 |     | 
+ 101 |     | 
+ 102 |     |     /// @notice Convert underlying tokens to pTokens
+ 103 |     |     /// @param amount In underlying units (which are equivalent to pToken units)
+ 104 |     |     function wrap(uint amount) external {
+ 105 |     |         Utils.safeTransferFrom(underlyingToken, msg.sender, address(this), amount);
+ 106 |     |         claimSurplus(msg.sender);
+ 107 |     |     }
+ 108 |     | 
+ 109 |     |     /// @notice Convert pTokens to underlying tokens
+ 110 |     |     /// @param amount In pToken units (which are equivalent to underlying units)
+ 111 |     |     function unwrap(uint amount) external {
+ 112 |     |         doUnwrap(msg.sender, amount);
+ 113 |     |     }
+ 114 |     | 
+ 115 |     |     // Only callable by the euler contract:
+ 116 |     |     function forceUnwrap(address who, uint amount) external {
+ 117 |     |         require(msg.sender == euler, "permission denied");
+ 118 |     |         doUnwrap(who, amount);
+ 119 |     |     }
+ 120 |     | 
+ 121 |     |     /// @notice Claim any surplus tokens held by the PToken contract. This should only be used by contracts.
+ 122 |     |     /// @param who Beneficiary to be credited for the surplus token amount
+ 123 |     |     function claimSurplus(address who) public {
+ 124 |     |         uint currBalance = IERC20(underlyingToken).balanceOf(address(this));
+ 125 |     |         require(currBalance > totalBalances, "no surplus balance to claim");
+ 126 |     | 
+ 127 |     |         uint amount = currBalance - totalBalances;
+ 128 |     | 
+ 129 |     |         totalBalances += amount;
+ 130 |     |         balances[who] += amount;
+ 131 |     |         emit Transfer(address(0), who, amount);
+ 132 |     |     }
+ 133 |     | 
+ 134 |     | 
+ 135 |     |     // Internal shared:
+ 136 |     | 
+ 137 |     |     function doUnwrap(address who, uint amount) private {
+ 138 |     |         require(balances[who] >= amount, "insufficient balance");
+ 139 |     | 
+ 140 |     |         totalBalances -= amount;
+ 141 |     |         balances[who] -= amount;
+ 142 |     | 
+ 143 |     |         Utils.safeTransfer(underlyingToken, who, amount);
+ 144 |     |         emit Transfer(who, address(0), amount);
+ 145 |     |     }
+ 146 |     | }
+ 147 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/Proxy.sol
+  1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+  2 |     | 
+  3 |     | pragma solidity ^0.8.0;
+  4 |     | 
+  5 |     | contract Proxy {
+  6 |     |     address immutable creator;
+  7 |     | 
+  8 |     |     constructor() {
+  9 |     |         creator = msg.sender;
+ 10 |     |     }
+ 11 |     | 
+ 12 |     |     // External interface
+ 13 |     | 
+ 14 |     |     fallback() external {
+ 15 |     |         address creator_ = creator;
+ 16 |     | 
+ 17 |     |         if (msg.sender == creator_) {
+ 18 |     |             assembly {
+ 19 |     |                 mstore(0, 0)
+ 20 |     |                 calldatacopy(31, 0, calldatasize())
+ 21 |     | 
+ 22 |     |                 switch mload(0) // numTopics
+ 23 |     |                     case 0 { log0(32,  sub(calldatasize(), 1)) }
+ 24 |     |                     case 1 { log1(64,  sub(calldatasize(), 33),  mload(32)) }
+ 25 |     |                     case 2 { log2(96,  sub(calldatasize(), 65),  mload(32), mload(64)) }
+ 26 |     |                     case 3 { log3(128, sub(calldatasize(), 97),  mload(32), mload(64), mload(96)) }
+ 27 |     |                     case 4 { log4(160, sub(calldatasize(), 129), mload(32), mload(64), mload(96), mload(128)) }
+ 28 |     |                     default { revert(0, 0) }
+ 29 |     | 
+ 30 |     |                 return(0, 0)
+ 31 |     |             }
+ 32 |     |         } else {
+ 33 |     |             assembly {
+ 34 |     |                 mstore(0, 0xe9c4a3ac00000000000000000000000000000000000000000000000000000000) // dispatch() selector
+ 35 |     |                 calldatacopy(4, 0, calldatasize())
+ 36 |     |                 mstore(add(4, calldatasize()), shl(96, caller()))
+ 37 |     | 
+ 38 |     |                 let result := call(gas(), creator_, 0, 0, add(24, calldatasize()), 0, 0)
+ 39 |     |                 returndatacopy(0, 0, returndatasize())
+ 40 |     | 
+ 41 |     |                 switch result
+ 42 |     |                     case 0 { revert(0, returndatasize()) }
+ 43 |     |                     default { return(0, returndatasize()) }
+ 44 |     |             }
+ 45 |     |         }
+ 46 |     |     }
+ 47 |     | }
+ 48 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/Storage.sol
+  1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+  2 |     | 
+  3 |     | pragma solidity ^0.8.0;
+  4 |     | 
+  5 |     | import "./Constants.sol";
+  6 |     | 
+  7 |     | abstract contract Storage is Constants {
+  8 |     |     // Dispatcher and upgrades
+  9 |     | 
+ 10 |     |     uint internal reentrancyLock;
+ 11 |     | 
+ 12 |     |     address upgradeAdmin;
+ 13 |     |     address governorAdmin;
+ 14 |     | 
+ 15 |     |     mapping(uint => address) moduleLookup; // moduleId => module implementation
+ 16 |     |     mapping(uint => address) proxyLookup; // moduleId => proxy address (only for single-proxy modules)
+ 17 |     | 
+ 18 |     |     struct TrustedSenderInfo {
+ 19 |     |         uint32 moduleId; // 0 = un-trusted
+ 20 |     |         address moduleImpl; // only non-zero for external single-proxy modules
+ 21 |     |     }
+ 22 |     | 
+ 23 |     |     mapping(address => TrustedSenderInfo) trustedSenders; // sender address => moduleId (0 = un-trusted)
+ 24 |     | 
+ 25 |     | 
+ 26 |     | 
+ 27 |     |     // Account-level state
+ 28 |     |     // Sub-accounts are considered distinct accounts
+ 29 |     | 
+ 30 |     |     struct AccountStorage {
+ 31 |     |         // Packed slot: 1 + 5 + 4 + 20 = 30
+ 32 |     |         uint8 deferLiquidityStatus;
+ 33 |     |         uint40 lastAverageLiquidityUpdate;
+ 34 |     |         uint32 numMarketsEntered;
+ 35 |     |         address firstMarketEntered;
+ 36 |     | 
+ 37 |     |         uint averageLiquidity;
+ 38 |     |         address averageLiquidityDelegate;
+ 39 |     |     }
+ 40 |     | 
+ 41 |     |     mapping(address => AccountStorage) accountLookup;
+ 42 |     |     mapping(address => address[MAX_POSSIBLE_ENTERED_MARKETS]) marketsEntered;
+ 43 |     | 
+ 44 |     | 
+ 45 |     | 
+ 46 |     |     // Markets and assets
+ 47 |     | 
+ 48 |     |     struct AssetConfig {
+ 49 |     |         // Packed slot: 20 + 1 + 4 + 4 + 3 = 32
+ 50 |     |         address eTokenAddress;
+ 51 |     |         bool borrowIsolated;
+ 52 |     |         uint32 collateralFactor;
+ 53 |     |         uint32 borrowFactor;
+ 54 |     |         uint24 twapWindow;
+ 55 |     |     }
+ 56 |     | 
+ 57 |     |     struct UserAsset {
+ 58 |     |         uint112 balance;
+ 59 |     |         uint144 owed;
+ 60 |     | 
+ 61 |     |         uint interestAccumulator;
+ 62 |     |     }
+ 63 |     | 
+ 64 |     |     struct AssetStorage {
+ 65 |     |         // Packed slot: 5 + 1 + 4 + 12 + 4 + 2 + 4 = 32
+ 66 |     |         uint40 lastInterestAccumulatorUpdate;
+ 67 |     |         uint8 underlyingDecimals; // Not dynamic, but put here to live in same storage slot
+ 68 |     |         uint32 interestRateModel;
+ 69 |     |         int96 interestRate;
+ 70 |     |         uint32 reserveFee;
+ 71 |     |         uint16 pricingType;
+ 72 |     |         uint32 pricingParameters;
+ 73 |     | 
+ 74 |     |         address underlying;
+ 75 |     |         uint96 reserveBalance;
+ 76 |     | 
+ 77 |     |         address dTokenAddress;
+ 78 |     | 
+ 79 |     |         uint112 totalBalances;
+ 80 |     |         uint144 totalBorrows;
+ 81 |     | 
+ 82 |     |         uint interestAccumulator;
+ 83 |     | 
+ 84 |     |         mapping(address => UserAsset) users;
+ 85 |     | 
+ 86 |     |         mapping(address => mapping(address => uint)) eTokenAllowance;
+ 87 |     |         mapping(address => mapping(address => uint)) dTokenAllowance;
+ 88 |     |     }
+ 89 |     | 
+ 90 |     |     mapping(address => AssetConfig) internal underlyingLookup; // underlying => AssetConfig
+ 91 |     |     mapping(address => AssetStorage) internal eTokenLookup; // EToken => AssetStorage
+ 92 |     |     mapping(address => address) internal dTokenLookup; // DToken => EToken
+ 93 |     |     mapping(address => address) internal pTokenLookup; // PToken => underlying
+ 94 |     |     mapping(address => address) internal reversePTokenLookup; // underlying => PToken
+ 95 |     |     mapping(address => address) internal chainlinkPriceFeedLookup; // underlying => chainlinkAggregator
+ 96 |     | }
+ 97 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/Utils.sol
+  1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+  2 |     | 
+  3 |     | pragma solidity ^0.8.0;
+  4 |     | 
+  5 |     | import "./Interfaces.sol";
+  6 |     | 
+  7 |     | library Utils {
+  8 |     |     function safeTransferFrom(address token, address from, address to, uint value) internal {
+  9 |     |         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, value));
+ 10 |     |         require(success && (data.length == 0 || abi.decode(data, (bool))), string(data));
+ 11 |     |     }
+ 12 |     | 
+ 13 |     |     function safeTransfer(address token, address to, uint value) internal {
+ 14 |     |         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transfer.selector, to, value));
+ 15 |     |         require(success && (data.length == 0 || abi.decode(data, (bool))), string(data));
+ 16 |     |     }
+ 17 |     | 
+ 18 |     |     function safeApprove(address token, address to, uint value) internal {
+ 19 |     |         (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.approve.selector, to, value));
+ 20 |     |         require(success && (data.length == 0 || abi.decode(data, (bool))), string(data));
+ 21 |     |     }
+ 22 |     | }
+ 23 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/modules/DToken.sol
+   1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+   2 |     | 
+   3 |     | pragma solidity ^0.8.0;
+   4 |     | 
+   5 |     | import "../BaseLogic.sol";
+   6 |     | 
+   7 |     | 
+   8 |     | /// @notice Definition of callback method that flashLoan will invoke on your contract
+   9 |     | interface IFlashLoan {
+  10 |     |     function onFlashLoan(bytes memory data) external;
+  11 |     | }
+  12 |     | 
+  13 |     | 
+  14 |     | /// @notice Tokenised representation of debts
+  15 |     | contract DToken is BaseLogic {
+  16 |     |     constructor(bytes32 moduleGitCommit_) BaseLogic(MODULEID__DTOKEN, moduleGitCommit_) {}
+  17 |     | 
+  18 |     |     function CALLER() private view returns (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) {
+  19 |     |         (msgSender, proxyAddr) = unpackTrailingParams();
+  20 |     |         address eTokenAddress = dTokenLookup[proxyAddr];
+  21 |     |         require(eTokenAddress != address(0), "e/unrecognized-dtoken-caller");
+  22 |     |         assetStorage = eTokenLookup[eTokenAddress];
+  23 |     |         underlying = assetStorage.underlying;
+  24 |     |     }
+  25 |     | 
+  26 |     | 
+  27 |     |     // Events
+  28 |     | 
+  29 |     |     event Transfer(address indexed from, address indexed to, uint256 value);
+  30 |     |     event Approval(address indexed owner, address indexed spender, uint256 value);
+  31 |     | 
+  32 |     | 
+  33 |     | 
+  34 |     |     // External methods
+  35 |     | 
+  36 |     |     /// @notice Debt token name, ie "Euler Debt: DAI"
+  37 |     |     function name() external view returns (string memory) {
+  38 |     |         (address underlying,,,) = CALLER();
+  39 |     |         return string(abi.encodePacked("Euler Debt: ", IERC20(underlying).name()));
+  40 |     |     }
+  41 |     | 
+  42 |     |     /// @notice Debt token symbol, ie "dDAI"
+  43 |     |     function symbol() external view returns (string memory) {
+  44 |     |         (address underlying,,,) = CALLER();
+  45 |     |         return string(abi.encodePacked("d", IERC20(underlying).symbol()));
+  46 |     |     }
+  47 |     | 
+  48 |     |     /// @notice Decimals of underlying
+  49 |     |     function decimals() external view returns (uint8) {
+  50 |     |         (,AssetStorage storage assetStorage,,) = CALLER();
+  51 |     |         return assetStorage.underlyingDecimals;
+  52 |     |     }
+  53 |     | 
+  54 |     |     /// @notice Address of underlying asset
+  55 |     |     function underlyingAsset() external view returns (address) {
+  56 |     |         (address underlying,,,) = CALLER();
+  57 |     |         return underlying;
+  58 |     |     }
+  59 |     | 
+  60 |     | 
+  61 |     |     /// @notice Sum of all outstanding debts, in underlying units (increases as interest is accrued)
+  62 |     |     function totalSupply() external view returns (uint) {
+  63 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+  64 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+  65 |     | 
+  66 |     |         return assetCache.totalBorrows / INTERNAL_DEBT_PRECISION / assetCache.underlyingDecimalsScaler;
+  67 |     |     }
+  68 |     | 
+  69 |     |     /// @notice Sum of all outstanding debts, in underlying units normalized to 27 decimals (increases as interest is accrued)
+  70 |     |     function totalSupplyExact() external view returns (uint) {
+  71 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+  72 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+  73 |     | 
+  74 |     |         return assetCache.totalBorrows;
+  75 |     |     }
+  76 |     | 
+  77 |     | 
+  78 |     |     /// @notice Debt owed by a particular account, in underlying units
+  79 |     |     function balanceOf(address account) external view returns (uint) {
+  80 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+  81 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+  82 |     | 
+  83 |     |         return getCurrentOwed(assetStorage, assetCache, account) / assetCache.underlyingDecimalsScaler;
+  84 |     |     }
+  85 |     | 
+  86 |     |     /// @notice Debt owed by a particular account, in underlying units normalized to 27 decimals
+  87 |     |     function balanceOfExact(address account) external view returns (uint) {
+  88 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+  89 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+  90 |     | 
+  91 |     |         return getCurrentOwedExact(assetStorage, assetCache, account, assetStorage.users[account].owed);
+  92 |     |     }
+  93 |     | 
+  94 |     | 
+  95 |     |     /// @notice Transfer underlying tokens from the Euler pool to the sender, and increase sender's dTokens
+  96 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+  97 |     |     /// @param amount In underlying units (use max uint256 for all available tokens)
+  98 |     |     function borrow(uint subAccountId, uint amount) external nonReentrant {
+  99 |     |         (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 100 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 101 |     | 
+ 102 |     |         updateAverageLiquidity(account);
+ 103 |     |         emit RequestBorrow(account, amount);
+ 104 |     | 
+ 105 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 106 |     | 
+ 107 |     |         if (amount == type(uint).max) {
+ 108 |     |             amount = assetCache.poolSize;
+ 109 |     |         } else {
+ 110 |     |             amount = decodeExternalAmount(assetCache, amount);
+ 111 |     |         }
+ 112 |     | 
+ 113 |     |         require(amount <= assetCache.poolSize, "e/insufficient-tokens-available");
+ 114 |     | 
+ 115 |     |         pushTokens(assetCache, msgSender, amount);
+ 116 |     | 
+ 117 |     |         increaseBorrow(assetStorage, assetCache, proxyAddr, account, amount);
+ 118 |     | 
+ 119 |     |         checkLiquidity(account);
+ 120 |     |         logAssetStatus(assetCache);
+ 121 |     |     }
+ 122 |     | 
+ 123 |     |     /// @notice Transfer underlying tokens from the sender to the Euler pool, and decrease sender's dTokens
+ 124 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+ 125 |     |     /// @param amount In underlying units (use max uint256 for full debt owed)
+ 126 |     |     function repay(uint subAccountId, uint amount) external nonReentrant {
+ 127 |     |         (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 128 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 129 |     | 
+ 130 |     |         updateAverageLiquidity(account);
+ 131 |     |         emit RequestRepay(account, amount);
+ 132 |     | 
+ 133 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 134 |     | 
+ 135 |     |         if (amount != type(uint).max) {
+ 136 |     |             amount = decodeExternalAmount(assetCache, amount);
+ 137 |     |         }
+ 138 |     | 
+ 139 |     |         uint owed = getCurrentOwed(assetStorage, assetCache, account);
+ 140 |     |         if (owed == 0) return;
+ 141 |     |         if (amount > owed) amount = owed;
+ 142 |     | 
+ 143 |     |         amount = pullTokens(assetCache, msgSender, amount);
+ 144 |     | 
+ 145 |     |         decreaseBorrow(assetStorage, assetCache, proxyAddr, account, amount);
+ 146 |     | 
+ 147 |     |         logAssetStatus(assetCache);
+ 148 |     |     }
+ 149 |     | 
+ 150 |     | 
+ 151 |     |     /// @notice Request a flash-loan. A onFlashLoan() callback in msg.sender will be invoked, which must repay the loan to the main Euler address prior to returning.
+ 152 |     |     /// @param amount In underlying units
+ 153 |     |     /// @param data Passed through to the onFlashLoan() callback, so contracts don't need to store transient data in storage
+ 154 |     |     function flashLoan(uint amount, bytes calldata data) external nonReentrant {
+ 155 |     |         (address underlying,,, address msgSender) = CALLER();
+ 156 |     | 
+ 157 |     |         uint origBalance = IERC20(underlying).balanceOf(address(this));
+ 158 |     | 
+ 159 |     |         Utils.safeTransfer(underlying, msgSender, amount);
+ 160 |     | 
+ 161 |     |         IFlashLoan(msgSender).onFlashLoan(data);
+ 162 |     | 
+ 163 |     |         require(IERC20(underlying).balanceOf(address(this)) >= origBalance, "e/flash-loan-not-repaid");
+ 164 |     |     }
+ 165 |     | 
+ 166 |     | 
+ 167 |     |     /// @notice Allow spender to send an amount of dTokens to a particular sub-account
+ 168 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+ 169 |     |     /// @param spender Trusted address
+ 170 |     |     /// @param amount In underlying units (use max uint256 for "infinite" allowance)
+ 171 |     |     function approveDebt(uint subAccountId, address spender, uint amount) public nonReentrant returns (bool) {
+ 172 |     |         (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 173 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 174 |     | 
+ 175 |     |         require(!isSubAccountOf(spender, account), "e/self-approval");
+ 176 |     | 
+ 177 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 178 |     | 
+ 179 |     |         assetStorage.dTokenAllowance[account][spender] = amount == type(uint).max ? type(uint).max : decodeExternalAmount(assetCache, amount);
+ 180 |     | 
+ 181 |     |         emitViaProxy_Approval(proxyAddr, account, spender, amount);
+ 182 |     | 
+ 183 |     |         return true;
+ 184 |     |     }
+ 185 |     | 
+ 186 |     |     /// @notice Retrieve the current debt allowance
+ 187 |     |     /// @param holder Xor with the desired sub-account ID (if applicable)
+ 188 |     |     /// @param spender Trusted address
+ 189 |     |     function debtAllowance(address holder, address spender) external view returns (uint) {
+ 190 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+ 191 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+ 192 |     | 
+ 193 |     |         uint allowance = assetStorage.dTokenAllowance[holder][spender];
+ 194 |     | 
+ 195 |     |         return allowance == type(uint).max ? type(uint).max : allowance / assetCache.underlyingDecimalsScaler;
+ 196 |     |     }
+ 197 |     | 
+ 198 |     | 
+ 199 |     | 
+ 200 |     |     /// @notice Transfer dTokens to another address (from sub-account 0)
+ 201 |     |     /// @param to Xor with the desired sub-account ID (if applicable)
+ 202 |     |     /// @param amount In underlying units. Use max uint256 for full balance.
+ 203 |     |     function transfer(address to, uint amount) external reentrantOK returns (bool) {
+ 204 |     |         return transferFrom(address(0), to, amount);
+ 205 |     |     }
+ 206 |     | 
+ 207 |     |     /// @notice Transfer dTokens from one address to another
+ 208 |     |     /// @param from Xor with the desired sub-account ID (if applicable)
+ 209 |     |     /// @param to This address must've approved the from address, or be a sub-account of msg.sender
+ 210 |     |     /// @param amount In underlying units. Use max uint256 for full balance.
+ 211 |     |     function transferFrom(address from, address to, uint amount) public nonReentrant returns (bool) {
+ 212 |     |         (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 213 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 214 |     | 
+ 215 |     |         if (from == address(0)) from = msgSender;
+ 216 |     |         require(from != to, "e/self-transfer");
+ 217 |     | 
+ 218 |     |         updateAverageLiquidity(from);
+ 219 |     |         updateAverageLiquidity(to);
+ 220 |     |         emit RequestTransferDToken(from, to, amount);
+ 221 |     | 
+ 222 |     |         if (amount == type(uint).max) amount = getCurrentOwed(assetStorage, assetCache, from);
+ 223 |     |         else amount = decodeExternalAmount(assetCache, amount);
+ 224 |     | 
+ 225 |     |         if (amount == 0) return true;
+ 226 |     | 
+ 227 |     |         if (!isSubAccountOf(msgSender, to) && assetStorage.dTokenAllowance[to][msgSender] != type(uint).max) {
+ 228 |     |             require(assetStorage.dTokenAllowance[to][msgSender] >= amount, "e/insufficient-debt-allowance");
+ 229 |     |             unchecked { assetStorage.dTokenAllowance[to][msgSender] -= amount; }
+ 230 |     |             emitViaProxy_Approval(proxyAddr, to, msgSender, assetStorage.dTokenAllowance[to][msgSender] / assetCache.underlyingDecimalsScaler);
+ 231 |     |         }
+ 232 |     | 
+ 233 |     |         transferBorrow(assetStorage, assetCache, proxyAddr, from, to, amount);
+ 234 |     | 
+ 235 |     |         checkLiquidity(to);
+ 236 |     |         logAssetStatus(assetCache);
+ 237 |     | 
+ 238 |     |         return true;
+ 239 |     |     }
+ 240 |     | }
+ 241 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/modules/EToken.sol
+   1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+   2 |     | 
+   3 |     | pragma solidity ^0.8.0;
+   4 |     | 
+   5 |     | import "../BaseLogic.sol";
+   6 |     | 
+   7 |     | 
+   8 |     | /// @notice Tokenised representation of assets
+   9 |     | contract EToken is BaseLogic {
+  10 |     |     constructor(bytes32 moduleGitCommit_) BaseLogic(MODULEID__ETOKEN, moduleGitCommit_) {}
+  11 |     | 
+  12 |     |     function CALLER() private view returns (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) {
+  13 |     |         (msgSender, proxyAddr) = unpackTrailingParams();
+  14 |     |         assetStorage = eTokenLookup[proxyAddr];
+  15 |     |         underlying = assetStorage.underlying;
+  16 |     |         require(underlying != address(0), "e/unrecognized-etoken-caller");
+  17 |     |     }
+  18 |     | 
+  19 |     | 
+  20 |     |     // Events
+  21 |     | 
+  22 |     |     event Transfer(address indexed from, address indexed to, uint256 value);
+  23 |     |     event Approval(address indexed owner, address indexed spender, uint256 value);
+  24 |     | 
+  25 |     | 
+  26 |     | 
+  27 |     |     // External methods
+  28 |     | 
+  29 |     |     /// @notice Pool name, ie "Euler Pool: DAI"
+  30 |     |     function name() external view returns (string memory) {
+  31 |     |         (address underlying,,,) = CALLER();
+  32 |     |         return string(abi.encodePacked("Euler Pool: ", IERC20(underlying).name()));
+  33 |     |     }
+  34 |     | 
+  35 |     |     /// @notice Pool symbol, ie "eDAI"
+  36 |     |     function symbol() external view returns (string memory) {
+  37 |     |         (address underlying,,,) = CALLER();
+  38 |     |         return string(abi.encodePacked("e", IERC20(underlying).symbol()));
+  39 |     |     }
+  40 |     | 
+  41 |     |     /// @notice Decimals, always normalised to 18.
+  42 |     |     function decimals() external pure returns (uint8) {
+  43 |     |         return 18;
+  44 |     |     }
+  45 |     | 
+  46 |     |     /// @notice Address of underlying asset
+  47 |     |     function underlyingAsset() external view returns (address) {
+  48 |     |         (address underlying,,,) = CALLER();
+  49 |     |         return underlying;
+  50 |     |     }
+  51 |     | 
+  52 |     | 
+  53 |     | 
+  54 |     |     /// @notice Sum of all balances, in internal book-keeping units (non-increasing)
+  55 |     |     function totalSupply() external view returns (uint) {
+  56 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+  57 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+  58 |     | 
+  59 |     |         return assetCache.totalBalances;
+  60 |     |     }
+  61 |     | 
+  62 |     |     /// @notice Sum of all balances, in underlying units (increases as interest is earned)
+  63 |     |     function totalSupplyUnderlying() external view returns (uint) {
+  64 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+  65 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+  66 |     | 
+  67 |     |         return balanceToUnderlyingAmount(assetCache, assetCache.totalBalances) / assetCache.underlyingDecimalsScaler;
+  68 |     |     }
+  69 |     | 
+  70 |     | 
+  71 |     |     /// @notice Balance of a particular account, in internal book-keeping units (non-increasing)
+  72 |     |     function balanceOf(address account) external view returns (uint) {
+  73 |     |         (, AssetStorage storage assetStorage,,) = CALLER();
+  74 |     | 
+  75 |     |         return assetStorage.users[account].balance;
+  76 |     |     }
+  77 |     | 
+  78 |     |     /// @notice Balance of a particular account, in underlying units (increases as interest is earned)
+  79 |     |     function balanceOfUnderlying(address account) external view returns (uint) {
+  80 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+  81 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+  82 |     | 
+  83 |     |         return balanceToUnderlyingAmount(assetCache, assetStorage.users[account].balance) / assetCache.underlyingDecimalsScaler;
+  84 |     |     }
+  85 |     | 
+  86 |     | 
+  87 |     |     /// @notice Balance of the reserves, in internal book-keeping units (non-increasing)
+  88 |     |     function reserveBalance() external view returns (uint) {
+  89 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+  90 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+  91 |     | 
+  92 |     |         return assetCache.reserveBalance;
+  93 |     |     }
+  94 |     | 
+  95 |     |     /// @notice Balance of the reserves, in underlying units (increases as interest is earned)
+  96 |     |     function reserveBalanceUnderlying() external view returns (uint) {
+  97 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+  98 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+  99 |     | 
+ 100 |     |         return balanceToUnderlyingAmount(assetCache, assetCache.reserveBalance) / assetCache.underlyingDecimalsScaler;
+ 101 |     |     }
+ 102 |     | 
+ 103 |     | 
+ 104 |     |     /// @notice Convert an eToken balance to an underlying amount, taking into account current exchange rate
+ 105 |     |     /// @param balance eToken balance, in internal book-keeping units (18 decimals)
+ 106 |     |     /// @return Amount in underlying units, (same decimals as underlying token)
+ 107 |     |     function convertBalanceToUnderlying(uint balance) external view returns (uint) {
+ 108 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+ 109 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+ 110 |     | 
+ 111 |     |         return balanceToUnderlyingAmount(assetCache, balance) / assetCache.underlyingDecimalsScaler;
+ 112 |     |     }
+ 113 |     | 
+ 114 |     |     /// @notice Convert an underlying amount to an eToken balance, taking into account current exchange rate
+ 115 |     |     /// @param underlyingAmount Amount in underlying units (same decimals as underlying token)
+ 116 |     |     /// @return eToken balance, in internal book-keeping units (18 decimals)
+ 117 |     |     function convertUnderlyingToBalance(uint underlyingAmount) external view returns (uint) {
+ 118 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+ 119 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+ 120 |     | 
+ 121 |     |         return underlyingAmountToBalance(assetCache, decodeExternalAmount(assetCache, underlyingAmount));
+ 122 |     |     }
+ 123 |     | 
+ 124 |     | 
+ 125 |     |     /// @notice Updates interest accumulator and totalBorrows, credits reserves, re-targets interest rate, and logs asset status
+ 126 |     |     function touch() external nonReentrant {
+ 127 |     |         (address underlying, AssetStorage storage assetStorage,,) = CALLER();
+ 128 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 129 |     | 
+ 130 |     |         updateInterestRate(assetStorage, assetCache);
+ 131 |     | 
+ 132 |     |         logAssetStatus(assetCache);
+ 133 |     |     }
+ 134 |     | 
+ 135 |     | 
+ 136 |     |     /// @notice Transfer underlying tokens from sender to the Euler pool, and increase account's eTokens
+ 137 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+ 138 |     |     /// @param amount In underlying units (use max uint256 for full underlying token balance)
+ 139 |     |     function deposit(uint subAccountId, uint amount) external nonReentrant {
+ 140 |     |         (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 141 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 142 |     | 
+ 143 |     |         updateAverageLiquidity(account);
+ 144 |     |         emit RequestDeposit(account, amount);
+ 145 |     | 
+ 146 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 147 |     | 
+ 148 |     |         if (amount == type(uint).max) {
+ 149 |     |             amount = callBalanceOf(assetCache, msgSender);
+ 150 |     |         }
+ 151 |     | 
+ 152 |     |         amount = decodeExternalAmount(assetCache, amount);
+ 153 |     | 
+ 154 |     |         uint amountTransferred = pullTokens(assetCache, msgSender, amount);
+ 155 |     |         uint amountInternal;
+ 156 |     | 
+ 157 |     |         // pullTokens() updates poolSize in the cache, but we need the poolSize before the deposit to determine
+ 158 |     |         // the internal amount so temporarily reduce it by the amountTransferred (which is size checked within
+ 159 |     |         // pullTokens()). We can't compute this value before the pull because we don't know how much we'll
+ 160 |     |         // actually receive (the token might be deflationary).
+ 161 |     | 
+ 162 |     |         unchecked {
+ 163 |     |             assetCache.poolSize -= amountTransferred;
+ 164 |     |             amountInternal = underlyingAmountToBalance(assetCache, amountTransferred);
+ 165 |     |             assetCache.poolSize += amountTransferred;
+ 166 |     |         }
+ 167 |     | 
+ 168 |     |         increaseBalance(assetStorage, assetCache, proxyAddr, account, amountInternal);
+ 169 |     | 
+ 170 |     |         // Depositing a token to an account with pre-existing debt in that token creates a self-collateralized loan
+ 171 |     |         // which may result in borrow isolation violation if other tokens are also borrowed on the account
+ 172 |     |         if (assetStorage.users[account].owed != 0) checkLiquidity(account);
+ 173 |     | 
+ 174 |     |         logAssetStatus(assetCache);
+ 175 |     |     }
+ 176 |     | 
+ 177 |     |     /// @notice Transfer underlying tokens from Euler pool to sender, and decrease account's eTokens
+ 178 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+ 179 |     |     /// @param amount In underlying units (use max uint256 for full pool balance)
+ 180 |     |     function withdraw(uint subAccountId, uint amount) external nonReentrant {
+ 181 |     |         (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 182 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 183 |     | 
+ 184 |     |         updateAverageLiquidity(account);
+ 185 |     |         emit RequestWithdraw(account, amount);
+ 186 |     | 
+ 187 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 188 |     | 
+ 189 |     |         uint amountInternal;
+ 190 |     |         (amount, amountInternal) = withdrawAmounts(assetStorage, assetCache, account, amount);
+ 191 |     |         require(assetCache.poolSize >= amount, "e/insufficient-pool-size");
+ 192 |     | 
+ 193 |     |         pushTokens(assetCache, msgSender, amount);
+ 194 |     | 
+ 195 |     |         decreaseBalance(assetStorage, assetCache, proxyAddr, account, amountInternal);
+ 196 |     | 
+ 197 |     |         checkLiquidity(account);
+ 198 |     | 
+ 199 |     |         logAssetStatus(assetCache);
+ 200 |     |     }
+ 201 |     | 
+ 202 |     | 
+ 203 |     |     /// @notice Mint eTokens and a corresponding amount of dTokens ("self-borrow")
+ 204 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+ 205 |     |     /// @param amount In underlying units
+ 206 |     |     function mint(uint subAccountId, uint amount) external nonReentrant {
+ 207 |     |         (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 208 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 209 |     | 
+ 210 |     |         updateAverageLiquidity(account);
+ 211 |     |         emit RequestMint(account, amount);
+ 212 |     | 
+ 213 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 214 |     | 
+ 215 |     |         amount = decodeExternalAmount(assetCache, amount);
+ 216 |     |         uint amountInternal = underlyingAmountToBalanceRoundUp(assetCache, amount);
+ 217 |     |         amount = balanceToUnderlyingAmount(assetCache, amountInternal);
+ 218 |     | 
+ 219 |     |         // Mint ETokens
+ 220 |     | 
+ 221 |     |         increaseBalance(assetStorage, assetCache, proxyAddr, account, amountInternal);
+ 222 |     | 
+ 223 |     |         // Mint DTokens
+ 224 |     | 
+ 225 |     |         increaseBorrow(assetStorage, assetCache, assetStorage.dTokenAddress, account, amount);
+ 226 |     | 
+ 227 |     |         checkLiquidity(account);
+ 228 |     |         logAssetStatus(assetCache);
+ 229 |     |     }
+ 230 |     | 
+ 231 |     |     /// @notice Pay off dToken liability with eTokens ("self-repay")
+ 232 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+ 233 |     |     /// @param amount In underlying units (use max uint256 to repay the debt in full or up to the available underlying balance)
+ 234 |     |     function burn(uint subAccountId, uint amount) external nonReentrant {
+ 235 |     |         (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 236 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 237 |     | 
+ 238 |     |         updateAverageLiquidity(account);
+ 239 |     |         emit RequestBurn(account, amount);
+ 240 |     | 
+ 241 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 242 |     | 
+ 243 |     |         uint owed = getCurrentOwed(assetStorage, assetCache, account);
+ 244 |     |         if (owed == 0) return;
+ 245 |     | 
+ 246 |     |         uint amountInternal;
+ 247 |     |         (amount, amountInternal) = withdrawAmounts(assetStorage, assetCache, account, amount);
+ 248 |     | 
+ 249 |     |         if (amount > owed) {
+ 250 |     |             amount = owed;
+ 251 |     |             amountInternal = underlyingAmountToBalanceRoundUp(assetCache, amount);
+ 252 |     |         }
+ 253 |     | 
+ 254 |     |         // Burn ETokens
+ 255 |     | 
+ 256 |     |         decreaseBalance(assetStorage, assetCache, proxyAddr, account, amountInternal);
+ 257 |     | 
+ 258 |     |         // Burn DTokens
+ 259 |     | 
+ 260 |     |         decreaseBorrow(assetStorage, assetCache, assetStorage.dTokenAddress, account, amount);
+ 261 |     | 
+ 262 |     |         checkLiquidity(account);
+ 263 |     |         logAssetStatus(assetCache);
+ 264 |     |     }
+ 265 |     | 
+ 266 |     | 
+ 267 |     | 
+ 268 |     |     /// @notice Allow spender to access an amount of your eTokens in sub-account 0
+ 269 |     |     /// @param spender Trusted address
+ 270 |     |     /// @param amount Use max uint256 for "infinite" allowance
+ 271 |     |     function approve(address spender, uint amount) external reentrantOK returns (bool) {
+ 272 |     |         return approveSubAccount(0, spender, amount);
+ 273 |     |     }
+ 274 |     | 
+ 275 |     |     /// @notice Allow spender to access an amount of your eTokens in a particular sub-account
+ 276 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+ 277 |     |     /// @param spender Trusted address
+ 278 |     |     /// @param amount Use max uint256 for "infinite" allowance
+ 279 |     |     function approveSubAccount(uint subAccountId, address spender, uint amount) public nonReentrant returns (bool) {
+ 280 |     |         (, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 281 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 282 |     | 
+ 283 |     |         require(!isSubAccountOf(spender, account), "e/self-approval");
+ 284 |     | 
+ 285 |     |         assetStorage.eTokenAllowance[account][spender] = amount;
+ 286 |     |         emitViaProxy_Approval(proxyAddr, account, spender, amount);
+ 287 |     | 
+ 288 |     |         return true;
+ 289 |     |     }
+ 290 |     | 
+ 291 |     |     /// @notice Retrieve the current allowance
+ 292 |     |     /// @param holder Xor with the desired sub-account ID (if applicable)
+ 293 |     |     /// @param spender Trusted address
+ 294 |     |     function allowance(address holder, address spender) external view returns (uint) {
+ 295 |     |         (, AssetStorage storage assetStorage,,) = CALLER();
+ 296 |     | 
+ 297 |     |         return assetStorage.eTokenAllowance[holder][spender];
+ 298 |     |     }
+ 299 |     | 
+ 300 |     | 
+ 301 |     | 
+ 302 |     | 
+ 303 |     |     /// @notice Transfer eTokens to another address (from sub-account 0)
+ 304 |     |     /// @param to Xor with the desired sub-account ID (if applicable)
+ 305 |     |     /// @param amount In internal book-keeping units (as returned from balanceOf).
+ 306 |     |     function transfer(address to, uint amount) external reentrantOK returns (bool) {
+ 307 |     |         return transferFrom(address(0), to, amount);
+ 308 |     |     }
+ 309 |     | 
+ 310 |     |     /// @notice Transfer the full eToken balance of an address to another
+ 311 |     |     /// @param from This address must've approved the to address, or be a sub-account of msg.sender
+ 312 |     |     /// @param to Xor with the desired sub-account ID (if applicable)
+ 313 |     |     function transferFromMax(address from, address to) external reentrantOK returns (bool) {
+ 314 |     |         (, AssetStorage storage assetStorage,,) = CALLER();
+ 315 |     | 
+ 316 |     |         return transferFrom(from, to, assetStorage.users[from].balance);
+ 317 |     |     }
+ 318 |     | 
+ 319 |     |     /// @notice Transfer eTokens from one address to another
+ 320 |     |     /// @param from This address must've approved the to address, or be a sub-account of msg.sender
+ 321 |     |     /// @param to Xor with the desired sub-account ID (if applicable)
+ 322 |     |     /// @param amount In internal book-keeping units (as returned from balanceOf).
+ 323 |     |     function transferFrom(address from, address to, uint amount) public nonReentrant returns (bool) {
+ 324 |     |         (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 325 |     | 
+ 326 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 327 |     | 
+ 328 |     |         if (from == address(0)) from = msgSender;
+ 329 |     |         require(from != to, "e/self-transfer");
+ 330 |     | 
+ 331 |     |         updateAverageLiquidity(from);
+ 332 |     |         updateAverageLiquidity(to);
+ 333 |     |         emit RequestTransferEToken(from, to, amount);
+ 334 |     | 
+ 335 |     |         if (amount == 0) return true;
+ 336 |     | 
+ 337 |     |         if (!isSubAccountOf(msgSender, from) && assetStorage.eTokenAllowance[from][msgSender] != type(uint).max) {
+ 338 |     |             require(assetStorage.eTokenAllowance[from][msgSender] >= amount, "e/insufficient-allowance");
+ 339 |     |             unchecked { assetStorage.eTokenAllowance[from][msgSender] -= amount; }
+ 340 |     |             emitViaProxy_Approval(proxyAddr, from, msgSender, assetStorage.eTokenAllowance[from][msgSender]);
+ 341 |     |         }
+ 342 |     | 
+ 343 |     |         transferBalance(assetStorage, assetCache, proxyAddr, from, to, amount);
+ 344 |     | 
+ 345 |     |         checkLiquidity(from);
+ 346 |     | 
+ 347 |     |         // Depositing a token to an account with pre-existing debt in that token creates a self-collateralized loan
+ 348 |     |         // which may result in borrow isolation violation if other tokens are also borrowed on the account
+ 349 |     |         if (assetStorage.users[to].owed != 0) checkLiquidity(to);
+ 350 |     | 
+ 351 |     |         logAssetStatus(assetCache);
+ 352 |     | 
+ 353 |     |         return true;
+ 354 |     |     }
+ 355 |     | 
+ 356 |     |     /// @notice Donate eTokens to the reserves
+ 357 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+ 358 |     |     /// @param amount In internal book-keeping units (as returned from balanceOf).
+ 359 |     |     function donateToReserves(uint subAccountId, uint amount) external nonReentrant {
+ 360 |     |         (address underlying, AssetStorage storage assetStorage, address proxyAddr, address msgSender) = CALLER();
+ 361 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 362 |     | 
+ 363 |     |         updateAverageLiquidity(account);
+ 364 |     |         emit RequestDonate(account, amount);
+ 365 |     | 
+ 366 |     |         AssetCache memory assetCache = loadAssetCache(underlying, assetStorage);
+ 367 |     | 
+ 368 |     |         uint origBalance = assetStorage.users[account].balance;
+ 369 |     |         uint newBalance;
+ 370 |     | 
+ 371 |     |         if (amount == type(uint).max) {
+ 372 |     |             amount = origBalance;
+ 373 |     |             newBalance = 0;
+ 374 |     |         } else {
+ 375 |     |             require(origBalance >= amount, "e/insufficient-balance");
+ 376 |     |             unchecked { newBalance = origBalance - amount; }
+ 377 |     |         }
+ 378 |     | 
+ 379 |     |         assetStorage.users[account].balance = encodeAmount(newBalance);
+ 380 |     |         assetStorage.reserveBalance = assetCache.reserveBalance = encodeSmallAmount(assetCache.reserveBalance + amount);
+ 381 |     | 
+ 382 |     |         emit Withdraw(assetCache.underlying, account, amount);
+ 383 |     |         emitViaProxy_Transfer(proxyAddr, account, address(0), amount);
+ 384 |     | 
+ 385 |     |         logAssetStatus(assetCache);
+ 386 |     |     }
+ 387 |     | }
+ 388 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/modules/Exec.sol
+   1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+   2 |     | 
+   3 |     | pragma solidity ^0.8.0;
+   4 |     | 
+   5 |     | import "../BaseLogic.sol";
+   6 |     | import "../IRiskManager.sol";
+   7 |     | import "../PToken.sol";
+   8 |     | import "../Interfaces.sol";
+   9 |     | import "../Utils.sol";
+  10 |     | 
+  11 |     | 
+  12 |     | /// @notice Definition of callback method that deferLiquidityCheck will invoke on your contract
+  13 |     | interface IDeferredLiquidityCheck {
+  14 |     |     function onDeferredLiquidityCheck(bytes memory data) external;
+  15 |     | }
+  16 |     | 
+  17 |     | 
+  18 |     | /// @notice Batch executions, liquidity check deferrals, and interfaces to fetch prices and account liquidity
+  19 |     | contract Exec is BaseLogic {
+  20 |     |     constructor(bytes32 moduleGitCommit_) BaseLogic(MODULEID__EXEC, moduleGitCommit_) {}
+  21 |     | 
+  22 |     |     /// @notice Single item in a batch request
+  23 |     |     struct EulerBatchItem {
+  24 |     |         bool allowError;
+  25 |     |         address proxyAddr;
+  26 |     |         bytes data;
+  27 |     |     }
+  28 |     | 
+  29 |     |     /// @notice Single item in a batch response
+  30 |     |     struct EulerBatchItemResponse {
+  31 |     |         bool success;
+  32 |     |         bytes result;
+  33 |     |     }
+  34 |     | 
+  35 |     |     /// @notice Error containing results of a simulated batch dispatch
+  36 |     |     error BatchDispatchSimulation(EulerBatchItemResponse[] simulation);
+  37 |     | 
+  38 |     |     // Accessors
+  39 |     | 
+  40 |     |     /// @notice Compute aggregate liquidity for an account
+  41 |     |     /// @param account User address
+  42 |     |     /// @return status Aggregate liquidity (sum of all entered assets)
+  43 |     |     function liquidity(address account) external staticDelegate returns (IRiskManager.LiquidityStatus memory status) {
+  44 |     |         bytes memory result = callInternalModule(MODULEID__RISK_MANAGER,
+  45 |     |                                                  abi.encodeWithSelector(IRiskManager.computeLiquidity.selector, account));
+  46 |     | 
+  47 |     |         (status) = abi.decode(result, (IRiskManager.LiquidityStatus));
+  48 |     |     }
+  49 |     | 
+  50 |     |     /// @notice Compute detailed liquidity for an account, broken down by asset
+  51 |     |     /// @param account User address
+  52 |     |     /// @return assets List of user's entered assets and each asset's corresponding liquidity
+  53 |     |     function detailedLiquidity(address account) public staticDelegate returns (IRiskManager.AssetLiquidity[] memory assets) {
+  54 |     |         bytes memory result = callInternalModule(MODULEID__RISK_MANAGER,
+  55 |     |                                                  abi.encodeWithSelector(IRiskManager.computeAssetLiquidities.selector, account));
+  56 |     | 
+  57 |     |         (assets) = abi.decode(result, (IRiskManager.AssetLiquidity[]));
+  58 |     |     }
+  59 |     | 
+  60 |     |     /// @notice Retrieve Euler's view of an asset's price
+  61 |     |     /// @param underlying Token address
+  62 |     |     /// @return twap Time-weighted average price
+  63 |     |     /// @return twapPeriod TWAP duration, either the twapWindow value in AssetConfig, or less if that duration not available
+  64 |     |     function getPrice(address underlying) external staticDelegate returns (uint twap, uint twapPeriod) {
+  65 |     |         bytes memory result = callInternalModule(MODULEID__RISK_MANAGER,
+  66 |     |                                                  abi.encodeWithSelector(IRiskManager.getPrice.selector, underlying));
+  67 |     | 
+  68 |     |         (twap, twapPeriod) = abi.decode(result, (uint, uint));
+  69 |     |     }
+  70 |     | 
+  71 |     |     /// @notice Retrieve Euler's view of an asset's price, as well as the current marginal price on uniswap
+  72 |     |     /// @param underlying Token address
+  73 |     |     /// @return twap Time-weighted average price
+  74 |     |     /// @return twapPeriod TWAP duration, either the twapWindow value in AssetConfig, or less if that duration not available
+  75 |     |     /// @return currPrice The current marginal price on uniswap3 (informational: not used anywhere in the Euler protocol)
+  76 |     |     function getPriceFull(address underlying) external staticDelegate returns (uint twap, uint twapPeriod, uint currPrice) {
+  77 |     |         bytes memory result = callInternalModule(MODULEID__RISK_MANAGER,
+  78 |     |                                                  abi.encodeWithSelector(IRiskManager.getPriceFull.selector, underlying));
+  79 |     | 
+  80 |     |         (twap, twapPeriod, currPrice) = abi.decode(result, (uint, uint, uint));
+  81 |     |     }
+  82 |     | 
+  83 |     | 
+  84 |     |     // Custom execution methods
+  85 |     | 
+  86 |     |     /// @notice Defer liquidity checking for an account, to perform rebalancing, flash loans, etc. msg.sender must implement IDeferredLiquidityCheck
+  87 |     |     /// @param account The account to defer liquidity for. Usually address(this), although not always
+  88 |     |     /// @param data Passed through to the onDeferredLiquidityCheck() callback, so contracts don't need to store transient data in storage
+  89 |     |     function deferLiquidityCheck(address account, bytes memory data) external reentrantOK {
+  90 |     |         address msgSender = unpackTrailingParamMsgSender();
+  91 |     | 
+  92 |     |         require(accountLookup[account].deferLiquidityStatus == DEFERLIQUIDITY__NONE, "e/defer/reentrancy");
+  93 |     |         accountLookup[account].deferLiquidityStatus = DEFERLIQUIDITY__CLEAN;
+  94 |     | 
+  95 |     |         IDeferredLiquidityCheck(msgSender).onDeferredLiquidityCheck(data);
+  96 |     | 
+  97 |     |         uint8 status = accountLookup[account].deferLiquidityStatus;
+  98 |     |         accountLookup[account].deferLiquidityStatus = DEFERLIQUIDITY__NONE;
+  99 |     | 
+ 100 |     |         if (status == DEFERLIQUIDITY__DIRTY) checkLiquidity(account);
+ 101 |     |     }
+ 102 |     | 
+ 103 |     |     /// @notice Execute several operations in a single transaction
+ 104 |     |     /// @param items List of operations to execute
+ 105 |     |     /// @param deferLiquidityChecks List of user accounts to defer liquidity checks for
+ 106 |     |     function batchDispatch(EulerBatchItem[] calldata items, address[] calldata deferLiquidityChecks) external reentrantOK {
+ 107 |     |         doBatchDispatch(items, deferLiquidityChecks, false);
+ 108 |     |     }
+ 109 |     | 
+ 110 |     |     /// @notice Call batch dispatch, but instruct it to revert with the responses, before the liquidity checks.
+ 111 |     |     /// @param items List of operations to execute
+ 112 |     |     /// @param deferLiquidityChecks List of user accounts to defer liquidity checks for
+ 113 |     |     /// @dev During simulation all batch items are executed, regardless of the `allowError` flag
+ 114 |     |     function batchDispatchSimulate(EulerBatchItem[] calldata items, address[] calldata deferLiquidityChecks) external reentrantOK {
+ 115 |     |         doBatchDispatch(items, deferLiquidityChecks, true);
+ 116 |     | 
+ 117 |     |         revert("e/batch/simulation-did-not-revert");
+ 118 |     |     }
+ 119 |     | 
+ 120 |     | 
+ 121 |     |     // Average liquidity tracking
+ 122 |     | 
+ 123 |     |     /// @notice Enable average liquidity tracking for your account. Operations will cost more gas, but you may get additional benefits when performing liquidations
+ 124 |     |     /// @param subAccountId subAccountId 0 for primary, 1-255 for a sub-account. 
+ 125 |     |     /// @param delegate An address of another account that you would allow to use the benefits of your account's average liquidity (use the null address if you don't care about this). The other address must also reciprocally delegate to your account.
+ 126 |     |     /// @param onlyDelegate Set this flag to skip tracking average liquidity and only set the delegate.
+ 127 |     |     function trackAverageLiquidity(uint subAccountId, address delegate, bool onlyDelegate) external nonReentrant {
+ 128 |     |         address msgSender = unpackTrailingParamMsgSender();
+ 129 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 130 |     |         require(account != delegate, "e/track-liquidity/self-delegation");
+ 131 |     | 
+ 132 |     |         emit DelegateAverageLiquidity(account, delegate);
+ 133 |     |         accountLookup[account].averageLiquidityDelegate = delegate;
+ 134 |     | 
+ 135 |     |         if (onlyDelegate) return;
+ 136 |     | 
+ 137 |     |         emit TrackAverageLiquidity(account);
+ 138 |     | 
+ 139 |     |         accountLookup[account].lastAverageLiquidityUpdate = uint40(block.timestamp);
+ 140 |     |         accountLookup[account].averageLiquidity = 0;
+ 141 |     |     }
+ 142 |     | 
+ 143 |     |     /// @notice Disable average liquidity tracking for your account and remove delegate
+ 144 |     |     /// @param subAccountId subAccountId 0 for primary, 1-255 for a sub-account
+ 145 |     |     function unTrackAverageLiquidity(uint subAccountId) external nonReentrant {
+ 146 |     |         address msgSender = unpackTrailingParamMsgSender();
+ 147 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 148 |     | 
+ 149 |     |         emit UnTrackAverageLiquidity(account);
+ 150 |     |         emit DelegateAverageLiquidity(account, address(0));
+ 151 |     | 
+ 152 |     |         accountLookup[account].lastAverageLiquidityUpdate = 0;
+ 153 |     |         accountLookup[account].averageLiquidity = 0;
+ 154 |     |         accountLookup[account].averageLiquidityDelegate = address(0);
+ 155 |     |     }
+ 156 |     | 
+ 157 |     |     /// @notice Retrieve the average liquidity for an account
+ 158 |     |     /// @param account User account (xor in subAccountId, if applicable)
+ 159 |     |     /// @return The average liquidity, in terms of the reference asset, and post risk-adjustment
+ 160 |     |     function getAverageLiquidity(address account) external nonReentrant returns (uint) {
+ 161 |     |         return getUpdatedAverageLiquidity(account);
+ 162 |     |     }
+ 163 |     | 
+ 164 |     |     /// @notice Retrieve the average liquidity for an account or a delegate account, if set
+ 165 |     |     /// @param account User account (xor in subAccountId, if applicable)
+ 166 |     |     /// @return The average liquidity, in terms of the reference asset, and post risk-adjustment
+ 167 |     |     function getAverageLiquidityWithDelegate(address account) external nonReentrant returns (uint) {
+ 168 |     |         return getUpdatedAverageLiquidityWithDelegate(account);
+ 169 |     |     }
+ 170 |     | 
+ 171 |     |     /// @notice Retrieve the account which delegates average liquidity for an account, if set
+ 172 |     |     /// @param account User account (xor in subAccountId, if applicable)
+ 173 |     |     /// @return The average liquidity delegate account
+ 174 |     |     function getAverageLiquidityDelegateAccount(address account) external view returns (address) {
+ 175 |     |         address delegate = accountLookup[account].averageLiquidityDelegate;
+ 176 |     |         return accountLookup[delegate].averageLiquidityDelegate == account ? delegate : address(0);
+ 177 |     |     }
+ 178 |     | 
+ 179 |     | 
+ 180 |     | 
+ 181 |     | 
+ 182 |     |     // PToken wrapping/unwrapping
+ 183 |     | 
+ 184 |     |     /// @notice Transfer underlying tokens from sender's wallet into the pToken wrapper. Allowance should be set for the euler address.
+ 185 |     |     /// @param underlying Token address
+ 186 |     |     /// @param amount The amount to wrap in underlying units
+ 187 |     |     function pTokenWrap(address underlying, uint amount) external nonReentrant {
+ 188 |     |         address msgSender = unpackTrailingParamMsgSender();
+ 189 |     | 
+ 190 |     |         emit PTokenWrap(underlying, msgSender, amount);
+ 191 |     | 
+ 192 |     |         address pTokenAddr = reversePTokenLookup[underlying];
+ 193 |     |         require(pTokenAddr != address(0), "e/exec/ptoken-not-found");
+ 194 |     | 
+ 195 |     |         {
+ 196 |     |             uint origBalance = IERC20(underlying).balanceOf(pTokenAddr);
+ 197 |     |             Utils.safeTransferFrom(underlying, msgSender, pTokenAddr, amount);
+ 198 |     |             uint newBalance = IERC20(underlying).balanceOf(pTokenAddr);
+ 199 |     |             require(newBalance == origBalance + amount, "e/exec/ptoken-transfer-mismatch");
+ 200 |     |         }
+ 201 |     | 
+ 202 |     |         PToken(pTokenAddr).claimSurplus(msgSender);
+ 203 |     |     }
+ 204 |     | 
+ 205 |     |     /// @notice Transfer underlying tokens from the pToken wrapper to the sender's wallet.
+ 206 |     |     /// @param underlying Token address
+ 207 |     |     /// @param amount The amount to unwrap in underlying units
+ 208 |     |     function pTokenUnWrap(address underlying, uint amount) external nonReentrant {
+ 209 |     |         address msgSender = unpackTrailingParamMsgSender();
+ 210 |     | 
+ 211 |     |         emit PTokenUnWrap(underlying, msgSender, amount);
+ 212 |     | 
+ 213 |     |         address pTokenAddr = reversePTokenLookup[underlying];
+ 214 |     |         require(pTokenAddr != address(0), "e/exec/ptoken-not-found");
+ 215 |     | 
+ 216 |     |         PToken(pTokenAddr).forceUnwrap(msgSender, amount);
+ 217 |     |     }
+ 218 |     | 
+ 219 |     |     /// @notice Apply EIP2612 signed permit on a target token from sender to euler contract
+ 220 |     |     /// @param token Token address
+ 221 |     |     /// @param value Allowance value
+ 222 |     |     /// @param deadline Permit expiry timestamp
+ 223 |     |     /// @param v secp256k1 signature v
+ 224 |     |     /// @param r secp256k1 signature r
+ 225 |     |     /// @param s secp256k1 signature s
+ 226 |     |     function usePermit(address token, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) external nonReentrant {
+ 227 |     |         require(underlyingLookup[token].eTokenAddress != address(0), "e/exec/market-not-activated");
+ 228 |     |         address msgSender = unpackTrailingParamMsgSender();
+ 229 |     | 
+ 230 |     |         IERC20Permit(token).permit(msgSender, address(this), value, deadline, v, r, s);
+ 231 |     |     }
+ 232 |     | 
+ 233 |     |     /// @notice Apply DAI like (allowed) signed permit on a target token from sender to euler contract
+ 234 |     |     /// @param token Token address
+ 235 |     |     /// @param nonce Sender nonce
+ 236 |     |     /// @param expiry Permit expiry timestamp
+ 237 |     |     /// @param allowed If true, set unlimited allowance, otherwise set zero allowance
+ 238 |     |     /// @param v secp256k1 signature v
+ 239 |     |     /// @param r secp256k1 signature r
+ 240 |     |     /// @param s secp256k1 signature s
+ 241 |     |     function usePermitAllowed(address token, uint256 nonce, uint256 expiry, bool allowed, uint8 v, bytes32 r, bytes32 s) external nonReentrant {
+ 242 |     |         require(underlyingLookup[token].eTokenAddress != address(0), "e/exec/market-not-activated");
+ 243 |     |         address msgSender = unpackTrailingParamMsgSender();
+ 244 |     | 
+ 245 |     |         IERC20Permit(token).permit(msgSender, address(this), nonce, expiry, allowed, v, r, s);
+ 246 |     |     }
+ 247 |     | 
+ 248 |     |     /// @notice Apply allowance to tokens expecting the signature packed in a single bytes param
+ 249 |     |     /// @param token Token address
+ 250 |     |     /// @param value Allowance value
+ 251 |     |     /// @param deadline Permit expiry timestamp
+ 252 |     |     /// @param signature secp256k1 signature encoded as rsv
+ 253 |     |     function usePermitPacked(address token, uint256 value, uint256 deadline, bytes calldata signature) external nonReentrant {
+ 254 |     |         require(underlyingLookup[token].eTokenAddress != address(0), "e/exec/market-not-activated");
+ 255 |     |         address msgSender = unpackTrailingParamMsgSender();
+ 256 |     | 
+ 257 |     |         IERC20Permit(token).permit(msgSender, address(this), value, deadline, signature);
+ 258 |     |     }
+ 259 |     | 
+ 260 |     |     /// @notice Execute a staticcall to an arbitrary address with an arbitrary payload.
+ 261 |     |     /// @param contractAddress Address of the contract to call
+ 262 |     |     /// @param payload Encoded call payload
+ 263 |     |     /// @return result Encoded return data
+ 264 |     |     /// @dev Intended to be used in static-called batches, to e.g. provide detailed information about the impacts of the simulated operation.
+ 265 |     |     function doStaticCall(address contractAddress, bytes memory payload) external view returns (bytes memory) {
+ 266 |     |         (bool success, bytes memory result) = contractAddress.staticcall(payload);
+ 267 |     |         if (!success) revertBytes(result);
+ 268 |     | 
+ 269 |     |         assembly {
+ 270 |     |             return(add(32, result), mload(result))
+ 271 |     |         }
+ 272 |     |     }
+ 273 |     | 
+ 274 |     |     function doBatchDispatch(EulerBatchItem[] calldata items, address[] calldata deferLiquidityChecks, bool revertResponse) private {
+ 275 |     |         address msgSender = unpackTrailingParamMsgSender();
+ 276 |     | 
+ 277 |     |         for (uint i = 0; i < deferLiquidityChecks.length; ++i) {
+ 278 |     |             address account = deferLiquidityChecks[i];
+ 279 |     | 
+ 280 |     |             require(accountLookup[account].deferLiquidityStatus == DEFERLIQUIDITY__NONE, "e/batch/reentrancy");
+ 281 |     |             accountLookup[account].deferLiquidityStatus = DEFERLIQUIDITY__CLEAN;
+ 282 |     |         }
+ 283 |     | 
+ 284 |     | 
+ 285 |     |         EulerBatchItemResponse[] memory response;
+ 286 |     |         if (revertResponse) response = new EulerBatchItemResponse[](items.length);
+ 287 |     | 
+ 288 |     |         for (uint i = 0; i < items.length; ++i) {
+ 289 |     |             EulerBatchItem calldata item = items[i];
+ 290 |     |             address proxyAddr = item.proxyAddr;
+ 291 |     | 
+ 292 |     |             uint32 moduleId = trustedSenders[proxyAddr].moduleId;
+ 293 |     |             address moduleImpl = trustedSenders[proxyAddr].moduleImpl;
+ 294 |     | 
+ 295 |     |             require(moduleId != 0, "e/batch/unknown-proxy-addr");
+ 296 |     |             require(moduleId <= MAX_EXTERNAL_MODULEID, "e/batch/call-to-internal-module");
+ 297 |     | 
+ 298 |     |             if (moduleImpl == address(0)) moduleImpl = moduleLookup[moduleId];
+ 299 |     |             require(moduleImpl != address(0), "e/batch/module-not-installed");
+ 300 |     | 
+ 301 |     |             bytes memory inputWrapped = abi.encodePacked(item.data, uint160(msgSender), uint160(proxyAddr));
+ 302 |     |             (bool success, bytes memory result) = moduleImpl.delegatecall(inputWrapped);
+ 303 |     | 
+ 304 |     |             if (revertResponse) {
+ 305 |     |                 EulerBatchItemResponse memory r = response[i];
+ 306 |     |                 r.success = success;
+ 307 |     |                 r.result = result;
+ 308 |     |             } else if (!(success || item.allowError)) {
+ 309 |     |                 revertBytes(result);
+ 310 |     |             }
+ 311 |     |         }
+ 312 |     | 
+ 313 |     |         if (revertResponse) revert BatchDispatchSimulation(response);
+ 314 |     | 
+ 315 |     |         for (uint i = 0; i < deferLiquidityChecks.length; ++i) {
+ 316 |     |             address account = deferLiquidityChecks[i];
+ 317 |     | 
+ 318 |     |             uint8 status = accountLookup[account].deferLiquidityStatus;
+ 319 |     |             accountLookup[account].deferLiquidityStatus = DEFERLIQUIDITY__NONE;
+ 320 |     | 
+ 321 |     |             if (status == DEFERLIQUIDITY__DIRTY) checkLiquidity(account);
+ 322 |     |         }
+ 323 |     |     }
+ 324 |     | }
+ 325 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/modules/Markets.sol
+   1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+   2 |     | 
+   3 |     | pragma solidity ^0.8.0;
+   4 |     | 
+   5 |     | import "../BaseLogic.sol";
+   6 |     | import "../IRiskManager.sol";
+   7 |     | import "../PToken.sol";
+   8 |     | 
+   9 |     | 
+  10 |     | /// @notice Activating and querying markets, and maintaining entered markets lists
+  11 |     | contract Markets is BaseLogic {
+  12 |     |     constructor(bytes32 moduleGitCommit_) BaseLogic(MODULEID__MARKETS, moduleGitCommit_) {}
+  13 |     | 
+  14 |     |     /// @notice Create an Euler pool and associated EToken and DToken addresses.
+  15 |     |     /// @param underlying The address of an ERC20-compliant token. There must be an initialised uniswap3 pool for the underlying/reference asset pair.
+  16 |     |     /// @return The created EToken, or the existing EToken if already activated.
+  17 |     |     function activateMarket(address underlying) external nonReentrant returns (address) {
+  18 |     |         require(pTokenLookup[underlying] == address(0), "e/markets/invalid-token");
+  19 |     |         return doActivateMarket(underlying);
+  20 |     |     }
+  21 |     | 
+  22 |     |     function doActivateMarket(address underlying) private returns (address) {
+  23 |     |         // Pre-existing
+  24 |     | 
+  25 |     |         if (underlyingLookup[underlying].eTokenAddress != address(0)) return underlyingLookup[underlying].eTokenAddress;
+  26 |     | 
+  27 |     | 
+  28 |     |         // Validation
+  29 |     | 
+  30 |     |         require(trustedSenders[underlying].moduleId == 0 && underlying != address(this), "e/markets/invalid-token");
+  31 |     | 
+  32 |     |         uint8 decimals = IERC20(underlying).decimals();
+  33 |     |         require(decimals <= 18, "e/too-many-decimals");
+  34 |     | 
+  35 |     | 
+  36 |     |         // Get risk manager parameters
+  37 |     | 
+  38 |     |         IRiskManager.NewMarketParameters memory params;
+  39 |     | 
+  40 |     |         {
+  41 |     |             bytes memory result = callInternalModule(MODULEID__RISK_MANAGER,
+  42 |     |                                                      abi.encodeWithSelector(IRiskManager.getNewMarketParameters.selector, underlying));
+  43 |     |             (params) = abi.decode(result, (IRiskManager.NewMarketParameters));
+  44 |     |         }
+  45 |     | 
+  46 |     | 
+  47 |     |         // Create proxies
+  48 |     | 
+  49 |     |         address childEToken = params.config.eTokenAddress = _createProxy(MODULEID__ETOKEN);
+  50 |     |         address childDToken = _createProxy(MODULEID__DTOKEN);
+  51 |     | 
+  52 |     | 
+  53 |     |         // Setup storage
+  54 |     | 
+  55 |     |         underlyingLookup[underlying] = params.config;
+  56 |     | 
+  57 |     |         dTokenLookup[childDToken] = childEToken;
+  58 |     | 
+  59 |     |         AssetStorage storage assetStorage = eTokenLookup[childEToken];
+  60 |     | 
+  61 |     |         assetStorage.underlying = underlying;
+  62 |     |         assetStorage.pricingType = params.pricingType;
+  63 |     |         assetStorage.pricingParameters = params.pricingParameters;
+  64 |     | 
+  65 |     |         assetStorage.dTokenAddress = childDToken;
+  66 |     | 
+  67 |     |         assetStorage.lastInterestAccumulatorUpdate = uint40(block.timestamp);
+  68 |     |         assetStorage.underlyingDecimals = decimals;
+  69 |     |         assetStorage.interestRateModel = uint32(MODULEID__IRM_DEFAULT);
+  70 |     |         assetStorage.reserveFee = type(uint32).max; // default
+  71 |     | 
+  72 |     |         {
+  73 |     |             assetStorage.reserveBalance = encodeSmallAmount(INITIAL_RESERVES);
+  74 |     |             assetStorage.totalBalances = encodeAmount(INITIAL_RESERVES);
+  75 |     |         }
+  76 |     | 
+  77 |     |         assetStorage.interestAccumulator = INITIAL_INTEREST_ACCUMULATOR;
+  78 |     | 
+  79 |     | 
+  80 |     |         emit MarketActivated(underlying, childEToken, childDToken);
+  81 |     | 
+  82 |     |         return childEToken;
+  83 |     |     }
+  84 |     | 
+  85 |     |     /// @notice Create a pToken and activate it on Euler. pTokens are protected wrappers around assets that prevent borrowing.
+  86 |     |     /// @param underlying The address of an ERC20-compliant token. There must already be an activated market on Euler for this underlying, and it must have a non-zero collateral factor.
+  87 |     |     /// @return The created pToken, or an existing one if already activated.
+  88 |     |     function activatePToken(address underlying) external nonReentrant returns (address) {
+  89 |     |         require(pTokenLookup[underlying] == address(0), "e/nested-ptoken");
+  90 |     | 
+  91 |     |         if (reversePTokenLookup[underlying] != address(0)) return reversePTokenLookup[underlying];
+  92 |     | 
+  93 |     |         {
+  94 |     |             AssetConfig memory config = resolveAssetConfig(underlying);
+  95 |     |             require(config.collateralFactor != 0, "e/ptoken/not-collateral");
+  96 |     |         }
+  97 |     |  
+  98 |     |         address pTokenAddr = address(new PToken(address(this), underlying));
+  99 |     | 
+ 100 |     |         pTokenLookup[pTokenAddr] = underlying;
+ 101 |     |         reversePTokenLookup[underlying] = pTokenAddr;
+ 102 |     | 
+ 103 |     |         emit PTokenActivated(underlying, pTokenAddr);
+ 104 |     | 
+ 105 |     |         doActivateMarket(pTokenAddr);
+ 106 |     | 
+ 107 |     |         return pTokenAddr;
+ 108 |     |     }
+ 109 |     | 
+ 110 |     | 
+ 111 |     |     // General market accessors
+ 112 |     | 
+ 113 |     |     /// @notice Given an underlying, lookup the associated EToken
+ 114 |     |     /// @param underlying Token address
+ 115 |     |     /// @return EToken address, or address(0) if not activated
+ 116 |     |     function underlyingToEToken(address underlying) external view returns (address) {
+ 117 |     |         return underlyingLookup[underlying].eTokenAddress;
+ 118 |     |     }
+ 119 |     | 
+ 120 |     |     /// @notice Given an underlying, lookup the associated DToken
+ 121 |     |     /// @param underlying Token address
+ 122 |     |     /// @return DToken address, or address(0) if not activated
+ 123 |     |     function underlyingToDToken(address underlying) external view returns (address) {
+ 124 |     |         return eTokenLookup[underlyingLookup[underlying].eTokenAddress].dTokenAddress;
+ 125 |     |     }
+ 126 |     | 
+ 127 |     |     /// @notice Given an underlying, lookup the associated PToken
+ 128 |     |     /// @param underlying Token address
+ 129 |     |     /// @return PToken address, or address(0) if it doesn't exist
+ 130 |     |     function underlyingToPToken(address underlying) external view returns (address) {
+ 131 |     |         return reversePTokenLookup[underlying];
+ 132 |     |     }
+ 133 |     | 
+ 134 |     |     /// @notice Looks up the Euler-related configuration for a token, and resolves all default-value placeholders to their currently configured values.
+ 135 |     |     /// @param underlying Token address
+ 136 |     |     /// @return Configuration struct
+ 137 |     |     function underlyingToAssetConfig(address underlying) external view returns (AssetConfig memory) {
+ 138 |     |         return resolveAssetConfig(underlying);
+ 139 |     |     }
+ 140 |     | 
+ 141 |     |     /// @notice Looks up the Euler-related configuration for a token, and returns it unresolved (with default-value placeholders)
+ 142 |     |     /// @param underlying Token address
+ 143 |     |     /// @return config Configuration struct
+ 144 |     |     function underlyingToAssetConfigUnresolved(address underlying) external view returns (AssetConfig memory config) {
+ 145 |     |         config = underlyingLookup[underlying];
+ 146 |     |         require(config.eTokenAddress != address(0), "e/market-not-activated");
+ 147 |     |     }
+ 148 |     | 
+ 149 |     |     /// @notice Given an EToken address, looks up the associated underlying
+ 150 |     |     /// @param eToken EToken address
+ 151 |     |     /// @return underlying Token address
+ 152 |     |     function eTokenToUnderlying(address eToken) external view returns (address underlying) {
+ 153 |     |         underlying = eTokenLookup[eToken].underlying;
+ 154 |     |         require(underlying != address(0), "e/invalid-etoken");
+ 155 |     |     }
+ 156 |     | 
+ 157 |     |     /// @notice Given a DToken address, looks up the associated underlying
+ 158 |     |     /// @param dToken DToken address
+ 159 |     |     /// @return underlying Token address
+ 160 |     |     function dTokenToUnderlying(address dToken) external view returns (address underlying) {
+ 161 |     |         address eToken = dTokenLookup[dToken];
+ 162 |     |         require(eToken != address(0), "e/invalid-dtoken");
+ 163 |     |         return eTokenLookup[eToken].underlying;
+ 164 |     |     }
+ 165 |     | 
+ 166 |     |     /// @notice Given an EToken address, looks up the associated DToken
+ 167 |     |     /// @param eToken EToken address
+ 168 |     |     /// @return dTokenAddr DToken address
+ 169 |     |     function eTokenToDToken(address eToken) external view returns (address dTokenAddr) {
+ 170 |     |         dTokenAddr = eTokenLookup[eToken].dTokenAddress;
+ 171 |     |         require(dTokenAddr != address(0), "e/invalid-etoken");
+ 172 |     |     }
+ 173 |     | 
+ 174 |     | 
+ 175 |     |     function getAssetStorage(address underlying) private view returns (AssetStorage storage) {
+ 176 |     |         address eTokenAddr = underlyingLookup[underlying].eTokenAddress;
+ 177 |     |         require(eTokenAddr != address(0), "e/market-not-activated");
+ 178 |     |         return eTokenLookup[eTokenAddr];
+ 179 |     |     }
+ 180 |     | 
+ 181 |     |     /// @notice Looks up an asset's currently configured interest rate model
+ 182 |     |     /// @param underlying Token address
+ 183 |     |     /// @return Module ID that represents the interest rate model (IRM)
+ 184 |     |     function interestRateModel(address underlying) external view returns (uint) {
+ 185 |     |         AssetStorage storage assetStorage = getAssetStorage(underlying);
+ 186 |     | 
+ 187 |     |         return assetStorage.interestRateModel;
+ 188 |     |     }
+ 189 |     | 
+ 190 |     |     /// @notice Retrieves the current interest rate for an asset
+ 191 |     |     /// @param underlying Token address
+ 192 |     |     /// @return The interest rate in yield-per-second, scaled by 10**27
+ 193 |     |     function interestRate(address underlying) external view returns (int96) {
+ 194 |     |         AssetStorage storage assetStorage = getAssetStorage(underlying);
+ 195 |     | 
+ 196 |     |         return assetStorage.interestRate;
+ 197 |     |     }
+ 198 |     | 
+ 199 |     |     /// @notice Retrieves the current interest rate accumulator for an asset
+ 200 |     |     /// @param underlying Token address
+ 201 |     |     /// @return An opaque accumulator that increases as interest is accrued
+ 202 |     |     function interestAccumulator(address underlying) external view returns (uint) {
+ 203 |     |         AssetStorage storage assetStorage = getAssetStorage(underlying);
+ 204 |     |         AssetCache memory assetCache = loadAssetCacheRO(underlying, assetStorage);
+ 205 |     | 
+ 206 |     |         return assetCache.interestAccumulator;
+ 207 |     |     }
+ 208 |     | 
+ 209 |     |     /// @notice Retrieves the reserve fee in effect for an asset
+ 210 |     |     /// @param underlying Token address
+ 211 |     |     /// @return Amount of interest that is redirected to the reserves, as a fraction scaled by RESERVE_FEE_SCALE (4e9)
+ 212 |     |     function reserveFee(address underlying) external view returns (uint32) {
+ 213 |     |         AssetStorage storage assetStorage = getAssetStorage(underlying);
+ 214 |     | 
+ 215 |     |         return assetStorage.reserveFee == type(uint32).max ? uint32(DEFAULT_RESERVE_FEE) : assetStorage.reserveFee;
+ 216 |     |     }
+ 217 |     | 
+ 218 |     |     /// @notice Retrieves the pricing config for an asset
+ 219 |     |     /// @param underlying Token address
+ 220 |     |     /// @return pricingType (1=pegged, 2=uniswap3, 3=forwarded, 4=chainlink)
+ 221 |     |     /// @return pricingParameters If uniswap3 pricingType then this represents the uniswap pool fee used, if chainlink pricing type this represents the fallback uniswap pool fee or 0 if none
+ 222 |     |     /// @return pricingForwarded If forwarded pricingType then this is the address prices are forwarded to, otherwise address(0)
+ 223 |     |     function getPricingConfig(address underlying) external view returns (uint16 pricingType, uint32 pricingParameters, address pricingForwarded) {
+ 224 |     |         AssetStorage storage assetStorage = getAssetStorage(underlying);
+ 225 |     | 
+ 226 |     |         pricingType = assetStorage.pricingType;
+ 227 |     |         pricingParameters = assetStorage.pricingParameters;
+ 228 |     | 
+ 229 |     |         pricingForwarded = pricingType == PRICINGTYPE__FORWARDED ? pTokenLookup[underlying] : address(0);
+ 230 |     |     }
+ 231 |     | 
+ 232 |     |     /// @notice Retrieves the Chainlink price feed config for an asset
+ 233 |     |     /// @param underlying Token address
+ 234 |     |     /// @return chainlinkAggregator Chainlink aggregator proxy address
+ 235 |     |     function getChainlinkPriceFeedConfig(address underlying) external view returns (address chainlinkAggregator) {
+ 236 |     |         chainlinkAggregator = chainlinkPriceFeedLookup[underlying];
+ 237 |     |     }
+ 238 |     | 
+ 239 |     |     
+ 240 |     |     // Enter/exit markets
+ 241 |     | 
+ 242 |     |     /// @notice Retrieves the list of entered markets for an account (assets enabled for collateral or borrowing)
+ 243 |     |     /// @param account User account
+ 244 |     |     /// @return List of underlying token addresses
+ 245 |     |     function getEnteredMarkets(address account) external view returns (address[] memory) {
+ 246 |     |         return getEnteredMarketsArray(account);
+ 247 |     |     }
+ 248 |     | 
+ 249 |     |     /// @notice Add an asset to the entered market list, or do nothing if already entered
+ 250 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+ 251 |     |     /// @param newMarket Underlying token address
+ 252 |     |     function enterMarket(uint subAccountId, address newMarket) external nonReentrant {
+ 253 |     |         address msgSender = unpackTrailingParamMsgSender();
+ 254 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 255 |     | 
+ 256 |     |         require(underlyingLookup[newMarket].eTokenAddress != address(0), "e/market-not-activated");
+ 257 |     | 
+ 258 |     |         doEnterMarket(account, newMarket);
+ 259 |     |     }
+ 260 |     | 
+ 261 |     |     /// @notice Remove an asset from the entered market list, or do nothing if not already present
+ 262 |     |     /// @param subAccountId 0 for primary, 1-255 for a sub-account
+ 263 |     |     /// @param oldMarket Underlying token address
+ 264 |     |     function exitMarket(uint subAccountId, address oldMarket) external nonReentrant {
+ 265 |     |         address msgSender = unpackTrailingParamMsgSender();
+ 266 |     |         address account = getSubAccount(msgSender, subAccountId);
+ 267 |     | 
+ 268 |     |         AssetConfig memory config = resolveAssetConfig(oldMarket);
+ 269 |     |         AssetStorage storage assetStorage = eTokenLookup[config.eTokenAddress];
+ 270 |     | 
+ 271 |     |         uint balance = assetStorage.users[account].balance;
+ 272 |     |         uint owed = assetStorage.users[account].owed;
+ 273 |     | 
+ 274 |     |         require(owed == 0, "e/outstanding-borrow");
+ 275 |     | 
+ 276 |     |         doExitMarket(account, oldMarket);
+ 277 |     | 
+ 278 |     |         if (config.collateralFactor != 0 && balance != 0) {
+ 279 |     |             checkLiquidity(account);
+ 280 |     |         }
+ 281 |     |     }
+ 282 |     | }
+ 283 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/vendor/RPow.sol
+  1 |     | // SPDX-License-Identifier: AGPL-3.0-or-later
+  2 |     | 
+  3 |     | // From MakerDAO DSS
+  4 |     | 
+  5 |     | // Copyright (C) 2018 Rain <rainbreak@riseup.net>
+  6 |     | //
+  7 |     | // This program is free software: you can redistribute it and/or modify
+  8 |     | // it under the terms of the GNU Affero General Public License as published by
+  9 |     | // the Free Software Foundation, either version 3 of the License, or
+ 10 |     | // (at your option) any later version.
+ 11 |     | //
+ 12 |     | // This program is distributed in the hope that it will be useful,
+ 13 |     | // but WITHOUT ANY WARRANTY; without even the implied warranty of
+ 14 |     | // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ 15 |     | // GNU Affero General Public License for more details.
+ 16 |     | //
+ 17 |     | // You should have received a copy of the GNU Affero General Public License
+ 18 |     | // along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ 19 |     | 
+ 20 |     | pragma solidity ^0.8.0;
+ 21 |     | 
+ 22 |     | library RPow {
+ 23 |     |     function rpow(uint x, uint n, uint base) internal pure returns (uint z) {
+ 24 |     |         assembly {
+ 25 |     |             switch x case 0 {switch n case 0 {z := base} default {z := 0}}
+ 26 |     |             default {
+ 27 |     |                 switch mod(n, 2) case 0 { z := base } default { z := x }
+ 28 |     |                 let half := div(base, 2)  // for rounding.
+ 29 |     |                 for { n := div(n, 2) } n { n := div(n,2) } {
+ 30 |     |                     let xx := mul(x, x)
+ 31 |     |                     if iszero(eq(div(xx, x), x)) { revert(0,0) }
+ 32 |     |                     let xxRound := add(xx, half)
+ 33 |     |                     if lt(xxRound, xx) { revert(0,0) }
+ 34 |     |                     x := div(xxRound, base)
+ 35 |     |                     if mod(n,2) {
+ 36 |     |                         let zx := mul(z, x)
+ 37 |     |                         if and(iszero(iszero(x)), iszero(eq(div(zx, x), z))) { revert(0,0) }
+ 38 |     |                         let zxRound := add(zx, half)
+ 39 |     |                         if lt(zxRound, zx) { revert(0,0) }
+ 40 |     |                         z := div(zxRound, base)
+ 41 |     |                     }
+ 42 |     |                 }
+ 43 |     |             }
+ 44 |     |         }
+ 45 |     |     }
+ 46 |     | }
+ 47 |     | 
+
+/Users/anajulia/code/euler_hack_poc/lib/euler-contracts/contracts/views/EulerSimpleLens.sol
+   1 |     | // SPDX-License-Identifier: GPL-2.0-or-later
+   2 |     | 
+   3 |     | pragma solidity ^0.8.0;
+   4 |     | 
+   5 |     | import "../Euler.sol";
+   6 |     | import "../modules/EToken.sol";
+   7 |     | import "../modules/Markets.sol";
+   8 |     | import "../modules/Exec.sol";
+   9 |     | import "../BaseIRMLinearKink.sol";
+  10 |     | import "../IRiskManager.sol";
+  11 |     | import "../Storage.sol";
+  12 |     | 
+  13 |     | interface IExec {
+  14 |     |     function getPriceFull(address underlying) external view returns (uint twap, uint twapPeriod, uint currPrice);
+  15 |     |     function liquidity(address account) external view returns (IRiskManager.LiquidityStatus memory status);
+  16 |     | }
+  17 |     | 
+  18 |     | contract EulerSimpleLens is Constants {
+  19 |     | 
+  20 |     |     bytes32 immutable public moduleGitCommit;
+  21 |     |     Euler immutable public euler;
+  22 |     |     Markets immutable public markets;
+  23 |     |     Exec immutable public exec;
+  24 |     | 
+  25 |     |     struct ResponseIRM {
+  26 |     |         uint kink;
+  27 |     | 
+  28 |     |         uint baseAPY;
+  29 |     |         uint kinkAPY;
+  30 |     |         uint maxAPY;
+  31 |     | 
+  32 |     |         uint baseSupplyAPY;
+  33 |     |         uint kinkSupplyAPY;
+  34 |     |         uint maxSupplyAPY;
+  35 |     |     }
+  36 |     |     
+  37 |     |     constructor(bytes32 moduleGitCommit_, address euler_) {
+  38 |     |         moduleGitCommit = moduleGitCommit_;
+  39 |     | 
+  40 |     |         euler = Euler(euler_);
+  41 |     |         markets = Markets(euler.moduleIdToProxy(MODULEID__MARKETS));
+  42 |     |         exec = Exec(euler.moduleIdToProxy(MODULEID__EXEC));
+  43 |     |     }
+  44 |     | 
+  45 |     |     // underlying -> etoken
+  46 |     |     function underlyingToEToken(address underlying) public view returns (address eToken) {
+  47 |     |         eToken = markets.underlyingToEToken(underlying);
+  48 |     |     }
+  49 |     | 
+  50 |     |     // underlying -> dtoken
+  51 |     |     function underlyingToDToken(address underlying) public view returns (address dToken) {
+  52 |     |         dToken = markets.underlyingToDToken(underlying);
+  53 |     |     }
+  54 |     | 
+  55 |     |     // underlying -> ptoken
+  56 |     |     function underlyingToPToken(address underlying) public view returns (address pToken) {
+  57 |     |         pToken = markets.underlyingToPToken(underlying);
+  58 |     |     }
+  59 |     | 
+  60 |     |     // underlying -> etoken, dtoken and ptoken
+  61 |     |     function underlyingToInternalTokens(address underlying) public view returns (address eToken, address dToken, address pToken) {
+  62 |     |         eToken = underlyingToEToken(underlying);
+  63 |     |         dToken = underlyingToDToken(underlying);
+  64 |     |         pToken = underlyingToPToken(underlying);
+  65 |     |     }
+  66 |     | 
+  67 |     |     // underlying -> asset configs
+  68 |     |     function underlyingToAssetConfig(address underlying) external view returns (Storage.AssetConfig memory config) {
+  69 |     |         config = markets.underlyingToAssetConfig(underlying);
+  70 |     |     }
+  71 |     | 
+  72 |     |     // underlying -> interest rate model
+  73 |     |     function interestRateModel(address underlying) external view returns (uint) {
+  74 |     |         return markets.interestRateModel(underlying);
+  75 |     |     }
+  76 |     | 
+  77 |     |     // underlying -> interest rate
+  78 |     |     function interestRates(address underlying) external view returns (uint borrowSPY, uint borrowAPY, uint supplyAPY) {
+  79 |     |         borrowSPY = uint(int(markets.interestRate(underlying)));
+  80 |     |         ( , uint totalBalances, uint totalBorrows, ) = getTotalSupplyAndDebts(underlying);
+  81 |     |         (borrowAPY, supplyAPY) = computeAPYs(borrowSPY, totalBorrows, totalBalances, reserveFee(underlying));
+  82 |     |     }
+  83 |     | 
+  84 |     |     // underlying -> interest accumulator
+  85 |     |     function interestAccumulator(address underlying) external view returns (uint) {
+  86 |     |         return markets.interestAccumulator(underlying);
+  87 |     |     }
+  88 |     | 
+  89 |     |     // underlying -> reserve fee
+  90 |     |     function reserveFee(address underlying) public view returns (uint32) {
+  91 |     |         return markets.reserveFee(underlying);
+  92 |     |     }
+  93 |     | 
+  94 |     |     // underlying -> pricing configs
+  95 |     |     function getPricingConfig(address underlying) external view returns (uint16 pricingType, uint32 pricingParameters, address pricingForwarded) {
+  96 |     |         (pricingType, pricingParameters, pricingForwarded) = markets.getPricingConfig(underlying);
+  97 |     |     }
+  98 |     | 
+  99 |     |     // entered markets
+ 100 |     |     function getEnteredMarkets(address account) external view returns (address[] memory) {
+ 101 |     |         return markets.getEnteredMarkets(account);
+ 102 |     |     }
+ 103 |     | 
+ 104 |     |     // liability, collateral, health score
+ 105 |     |     function getAccountStatus(address account) external view returns (uint collateralValue, uint liabilityValue, uint healthScore) {
+ 106 |     |         IExec _exec = IExec(address(exec));
+ 107 |     |         IRiskManager.LiquidityStatus memory status = _exec.liquidity(account);
+ 108 |     | 
+ 109 |     |         collateralValue = status.collateralValue;
+ 110 |     |         liabilityValue = status.liabilityValue;
+ 111 |     | 
+ 112 |     |         healthScore = liabilityValue == 0? type(uint256).max : collateralValue * 1e18 / liabilityValue;
+ 113 |     |     } 
+ 114 |     | 
+ 115 |     |     // prices
+ 116 |     |     function getPriceFull(address underlying) external view returns (uint twap, uint twapPeriod, uint currPrice) {
+ 117 |     |         IExec _exec = IExec(address(exec));
+ 118 |     |         (twap, twapPeriod, currPrice) = _exec.getPriceFull(underlying);
+ 119 |     |     }
+ 120 |     | 
+ 121 |     |     // Balance of an account's wrapped tokens
+ 122 |     |     function getPTokenBalance(address underlying, address account) external view returns (uint256) {
+ 123 |     |         address pTokenAddr = underlyingToPToken(underlying); 
+ 124 |     |         return IERC20(pTokenAddr).balanceOf(account);
+ 125 |     |     }
+ 126 |     | 
+ 127 |     |     // Debt owed by a particular account, in underlying units
+ 128 |     |     function getDTokenBalance(address underlying, address account) external view returns (uint256) {
+ 129 |     |         address dTokenAddr = underlyingToDToken(underlying);
+ 130 |     |         return IERC20(dTokenAddr).balanceOf(account);
+ 131 |     |     }
+ 132 |     | 
+ 133 |     |     // Balance of a particular account, in underlying units (increases as interest is earned)
+ 134 |     |     function getETokenBalance(address underlying, address account) external view returns (uint256) {
+ 135 |     |         address eTokenAddr = underlyingToEToken(underlying);
+ 136 |     |         return EToken(eTokenAddr).balanceOfUnderlying(account);
+ 137 |     |     }
+ 138 |     | 
+ 139 |     |     // approvals
+ 140 |     |     function getEulerAccountAllowance(address underlying, address account) external view returns (uint256) {
+ 141 |     |         return IERC20(underlying).allowance(account, address(euler));
+ 142 |     |     }
+ 143 |     | 
+ 144 |     |     // total supply, total debts
+ 145 |     |     function getTotalSupplyAndDebts(address underlying) public view returns (uint poolSize, uint totalBalances, uint totalBorrows, uint reserveBalance) {
+ 146 |     |         poolSize = IERC20(underlying).balanceOf(address(euler));
+ 147 |     |         (address eTokenAddr, address dTokenAddr, ) = underlyingToInternalTokens(underlying);
+ 148 |     |         totalBalances = EToken(eTokenAddr).totalSupplyUnderlying();
+ 149 |     |         totalBorrows = IERC20(dTokenAddr).totalSupply();
+ 150 |     |         reserveBalance = EToken(eTokenAddr).reserveBalanceUnderlying();
+ 151 |     |     }
+ 152 |     | 
+ 153 |     |     // token name and symbol
+ 154 |     |     function getTokenInfo(address underlying) external view returns (string memory name, string memory symbol) {
+ 155 |     |         name = getStringOrBytes32(underlying, IERC20.name.selector);
+ 156 |     |         symbol = getStringOrBytes32(underlying, IERC20.symbol.selector);
+ 157 |     |     }
+ 158 |     | 
+ 159 |     |     // For tokens like MKR which return bytes32 on name() or symbol()
+ 160 |     |     function getStringOrBytes32(address contractAddress, bytes4 selector) private view returns (string memory) {
+ 161 |     |         (bool success, bytes memory result) = contractAddress.staticcall(abi.encodeWithSelector(selector));
+ 162 |     |         if (!success || result.length < 32) return "";
+ 163 |     | 
+ 164 |     |         return result.length == 32 ? string(abi.encodePacked(result)) : abi.decode(result, (string));
+ 165 |     |     }
+ 166 |     | 
+ 167 |     |     // interest rates as APYs
+ 168 |     |     function irmSettings(address underlying) external view returns (ResponseIRM memory r) {
+ 169 |     |         uint moduleId = markets.interestRateModel(underlying);
+ 170 |     |         address moduleImpl = euler.moduleIdToImplementation(moduleId);
+ 171 |     | 
+ 172 |     |         BaseIRMLinearKink irm = BaseIRMLinearKink(moduleImpl);
+ 173 |     | 
+ 174 |     |         uint kink = r.kink = irm.kink();
+ 175 |     |         uint32 _reserveFee = reserveFee(underlying);
+ 176 |     | 
+ 177 |     |         uint baseSPY = irm.baseRate();
+ 178 |     |         uint kinkSPY = baseSPY + (kink * irm.slope1());
+ 179 |     |         uint maxSPY = kinkSPY + ((type(uint32).max - kink) * irm.slope2());
+ 180 |     | 
+ 181 |     |         (r.baseAPY, r.baseSupplyAPY) = computeAPYs(baseSPY, 0, type(uint32).max, _reserveFee);
+ 182 |     |         (r.kinkAPY, r.kinkSupplyAPY) = computeAPYs(kinkSPY, kink, type(uint32).max, _reserveFee);
+ 183 |     |         (r.maxAPY, r.maxSupplyAPY) = computeAPYs(maxSPY, type(uint32).max, type(uint32).max, _reserveFee);
+ 184 |     |     }
+ 185 |     | 
+ 186 |     |     // compute APYs
+ 187 |     |     function computeAPYs(uint borrowSPY, uint totalBorrows, uint totalBalancesUnderlying, uint32 _reserveFee) private pure returns (uint borrowAPY, uint supplyAPY) {
+ 188 |     |         borrowAPY = RPow.rpow(borrowSPY + 1e27, SECONDS_PER_YEAR, 10**27) - 1e27;
+ 189 |     | 
+ 190 |     |         uint supplySPY = totalBalancesUnderlying == 0 ? 0 : borrowSPY * totalBorrows / totalBalancesUnderlying;
+ 191 |     |         supplySPY = supplySPY * (RESERVE_FEE_SCALE - _reserveFee) / RESERVE_FEE_SCALE;
+ 192 |     |         supplyAPY = RPow.rpow(supplySPY + 1e27, SECONDS_PER_YEAR, 10**27) - 1e27;
+ 193 |     |     }
+ 194 |     | 
+ 195 |     | }
+ 196 |     | 
+ 197 |     | 
+
+/Users/anajulia/code/euler_hack_poc/src/libraries/Addresses.sol
+  1 |     | // SPDX-License-Identifier: UNLICENSED
+  2 |     | pragma solidity ^0.8.4;
+  3 |     | 
+  4 |     | // Addresses from mainnet
+  5 |     | library Addresses {
+  6 |     |     address constant HEVM_ADDRESS = 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D;
+  7 | *   |     address constant EULER = 0x27182842E098f60e3D576794A5bFFb0777E025d3;
+  8 |     |     address constant EULER_SIMPLE_LENS = 0xAF68CFba29D0e15490236A5631cA9497e035CD39;
+  9 |     |     address constant LIQUIDATION = 0xf43ce1d09050BAfd6980dD43Cde2aB9F18C85b34;
+ 10 |     |     address constant MARKETS = 0x3520d5a913427E6F0D6A83E07ccD4A4da316e4d3;
+ 11 |     |     address constant eDAI = 0xe025E3ca2bE02316033184551D4d3Aa22024D9DC;
+ 12 |     |     address constant dDAI = 0x6085Bc95F506c326DCBCD7A6dd6c79FBc18d4686;
+ 13 |     |     address constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+ 14 |     |     // https://docs.aave.com/developers/deployed-contracts/v3-mainnet/ethereum-mainnet
+ 15 |     |     address constant POOL_ADDRESSES_PROVIDER = 0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e;
+ 16 |     | }
+ 17 |     | 
+
+/Users/anajulia/code/euler_hack_poc/test/Constants.sol
+ 1 |     | // SPDX-License-Identifier: UNLICENSED
+ 2 |     | pragma solidity ^0.8.4;
+ 3 |     | 
+ 4 |     | library Constants {
+ 5 |     |     // https://etherscan.io/tx/0xc310a0affe2169d1f6feec1c63dbc7f7c62a887fa48795d327d4d2da2d6b111d
+ 6 | *   |     uint256 constant ATTACK_BLOCK_NUMBER = 16817996;
+ 7 |     | }
+ 8 |     | 
+
+/Users/anajulia/code/euler_hack_poc/test/echidna/EchidnaInvariant.t.sol
+   1 |     | pragma solidity ^0.8.0;
+   2 |     | import { Addresses } from "../../src/libraries/Addresses.sol";
+   3 |     | import {DToken} from "euler-contracts/modules/DToken.sol";
+   4 |     | import {EToken} from "euler-contracts/modules/EToken.sol";
+   5 |     | import {EulerSimpleLens} from "euler-contracts/views/EulerSimpleLens.sol";
+   6 |     | import {Constants} from "../Constants.sol";
+   7 |     | 
+   8 |     | interface IHevm {
+   9 |     |     function roll(uint256 newNumber) external;
+  10 |     | 
+  11 |     |     function store(address c, bytes32 loc, bytes32 val) external;
+  12 |     | 
+  13 |     |     function prank(address msgSender) external;
+  14 |     | }
+  15 |     | 
+  16 |     | interface IERC20 {
+  17 |     |     function approve(address spender, uint256 amount) external returns (bool);
+  18 |     | 
+  19 |     |     function transfer(address recipient, uint256 amount) external returns (bool);
+  20 |     | 
+  21 |     |     function balanceOf(address account) external view returns (uint256);
+  22 |     | }
+  23 |     | 
+  24 |     | interface IMarket {
+  25 |     |     function enterMarket(uint subAccountId, address newMarket) external;
+  26 |     | 
+  27 |     |     function underlyingToEToken(address underlying) external view returns (address);
+  28 |     | }
+  29 |     | 
+  30 | *r  | contract InvariantTestEchidna {
+  31 |     |     IHevm internal hevm;
+  32 |     |     EToken internal eToken;
+  33 |     |     DToken internal dToken;
+  34 |     |     IMarket internal market;
+  35 |     |     IERC20 internal token;
+  36 |     |     EulerSimpleLens internal eulerSimpleLens;
+  37 |     |     address user = address(this);
+  38 |     | 
+  39 |     |     event log_block(uint256 block_number);
+  40 |     |     event log_balance(uint256 balance);
+  41 |     | 
+  42 |     |     constructor() {
+  43 |     |         eToken = EToken(Addresses.eDAI);
+  44 |     |         dToken = DToken(Addresses.dDAI);
+  45 |     |         token = IERC20(Addresses.DAI);
+  46 |     |         eulerSimpleLens = EulerSimpleLens(Addresses.EULER_SIMPLE_LENS);
+  47 |     |         market = IMarket(Addresses.MARKETS);
+  48 |     |         hevm = IHevm(Addresses.HEVM_ADDRESS);
+  49 |     | 
+  50 |     |         // Set DAI balance to user (this contract)
+  51 |     |         uint256 amount = 20e6 * 1e18;
+  52 |     | //       hevm.store(address(token), keccak256(abi.encodePacked(user, uint256(2))), bytes32(abi.encodePacked(amount)));
+  53 |     | 
+  54 |     |         // Binance address
+  55 |     |         hevm.prank(0x47ac0Fb4F2D84898e4D9E7b4DaB3C24507a6D503);
+  56 |     |         token.transfer(user, amount);
+  57 |     | 
+  58 |     |     }
+  59 |     | 
+  60 |     | //    function leverage(uint256 _amount) public {
+  61 |     | //        (uint256 collateralValue, uint256 liabilityValue, ) = eulerSimpleLens.getAccountStatus(user);
+  62 |     | //
+  63 |     | //        // 0.28 is the Euler borrow factor
+  64 |     | //        uint256 availableForBorrowing = ((collateralValue * 28) / 100) - liabilityValue;
+  65 |     | //
+  66 |     | //        _amount = _amount % availableForBorrowing;
+  67 |     | //
+  68 |     | //        eToken.mint(0, _amount);
+  69 |     | //
+  70 |     | //        assert(dToken.balanceOf(user) <= eToken.balanceOf(user));
+  71 |     | //    }
+  72 |     | 
+  73 | *   |     function deposit(uint256 _amount) public {
+  74 | *   |         uint256 balance = token.balanceOf(user);
+  75 | *   |         _amount = _amount % balance;
+  76 |     | 
+  77 | *   |         token.approve(Addresses.EULER, _amount);
+  78 | *   |         market.enterMarket(0, address(token));
+  79 |     | 
+  80 |     |         //hevm.roll(Constants.ATTACK_BLOCK_NUMBER - 1);
+  81 | *   |         assert(block.number < Constants.ATTACK_BLOCK_NUMBER);
+  82 | *r  |         eToken.deposit(0, _amount);
+  83 |     |         assert(eToken.balanceOf(user) <= dToken.balanceOf(user));
+  84 |     |     }
+  85 |     | 
+  86 |     |  //   function repay(uint256 _amount) public {
+  87 |     |  //       uint256 borrowed = eToken.balanceOf(user);
+  88 |     |  //       _amount = _amount % borrowed;
+  89 |     | 
+  90 |     |  //       dToken.repay(0, _amount);
+  91 |     | 
+  92 |     |  //       assert(dToken.balanceOf(user) <= eToken.balanceOf(user));
+  93 |     |  //   }
+  94 |     | 
+  95 |     |  //   function donateToReserves(uint256 _amount) public {
+  96 |     |  //       uint256 eBalance = eToken.balanceOf(user);
+  97 |     |  //       // range is [1, eBalance)
+  98 |     |  //       _amount = 1 + (_amount % (eBalance - 1));
+  99 |     | 
+ 100 |     |  //       eToken.donateToReserves(0, _amount);
+ 101 |     | 
+ 102 |     |  //       assert(dToken.balanceOf(user) <= eToken.balanceOf(user));
+ 103 |     |  //   }
+ 104 |     | 
+ 105 |     | }
+ 106 |     | 
+

@@ -38,8 +38,6 @@ contract Handler is Test {
 
     }
 
-
-
     function deposit(uint256 _amount) public {
         _amount = bound(_amount, 0, MAX_SANE_AMOUNT);
 

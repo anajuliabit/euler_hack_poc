@@ -1,0 +1,196 @@
+<style> code { white-space: pre-wrap; display: block; background-color: #eee; }.executed { background-color: #afa; }.reverted { background-color: #ffa; }.unexecuted { background-color: #faa; }.neutral { background-color: #eee; }</style><b>0x6B175474E89094C44Da98b954EedeAC495271d0F</b>
+<code>
+   1 |     | <span class='neutral'>// hevm: flattened sources of /nix/store/8xb41r4qd0cjb63wcrxf1qmfg88p0961-dss-6fd7de0/src/dai.sol</span>
+   2 |     | <span class='neutral'>pragma solidity =0.5.12;</span>
+   3 |     | <span class='neutral'></span>
+   4 |     | <span class='neutral'>////// /nix/store/8xb41r4qd0cjb63wcrxf1qmfg88p0961-dss-6fd7de0/src/lib.sol</span>
+   5 |     | <span class='neutral'>// This program is free software: you can redistribute it and/or modify</span>
+   6 |     | <span class='neutral'>// it under the terms of the GNU General Public License as published by</span>
+   7 |     | <span class='neutral'>// the Free Software Foundation, either version 3 of the License, or</span>
+   8 |     | <span class='neutral'>// (at your option) any later version.</span>
+   9 |     | <span class='neutral'></span>
+  10 |     | <span class='neutral'>// This program is distributed in the hope that it will be useful,</span>
+  11 |     | <span class='neutral'>// but WITHOUT ANY WARRANTY; without even the implied warranty of</span>
+  12 |     | <span class='neutral'>// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</span>
+  13 |     | <span class='neutral'>// GNU General Public License for more details.</span>
+  14 |     | <span class='neutral'></span>
+  15 |     | <span class='neutral'>// You should have received a copy of the GNU General Public License</span>
+  16 |     | <span class='neutral'>// along with this program.  If not, see &lt;http://www.gnu.org/licenses/&gt;.</span>
+  17 |     | <span class='neutral'></span>
+  18 |     | <span class='neutral'>/* pragma solidity 0.5.12; */</span>
+  19 |     | <span class='neutral'></span>
+  20 |     | <span class='neutral'>contract LibNote {</span>
+  21 |     | <span class='neutral'>    event LogNote(</span>
+  22 |     | <span class='neutral'>        bytes4   indexed  sig,</span>
+  23 |     | <span class='neutral'>        address  indexed  usr,</span>
+  24 |     | <span class='neutral'>        bytes32  indexed  arg1,</span>
+  25 |     | <span class='neutral'>        bytes32  indexed  arg2,</span>
+  26 |     | <span class='neutral'>        bytes             data</span>
+  27 |     | <span class='neutral'>    ) anonymous;</span>
+  28 |     | <span class='neutral'></span>
+  29 |     | <span class='neutral'>    modifier note {</span>
+  30 |     | <span class='neutral'>        _;</span>
+  31 |     | <span class='unexecuted'>        assembly {</span>
+  32 |     | <span class='neutral'>            // log an &#39;anonymous&#39; event with a constant 6 words of calldata</span>
+  33 |     | <span class='neutral'>            // and four indexed topics: selector, caller, arg1 and arg2</span>
+  34 |     | <span class='unexecuted'>            let mark := msize                         // end of memory ensures zero</span>
+  35 |     | <span class='unexecuted'>            mstore(0x40, add(mark, 288))              // update free memory pointer</span>
+  36 |     | <span class='unexecuted'>            mstore(mark, 0x20)                        // bytes type data offset</span>
+  37 |     | <span class='unexecuted'>            mstore(add(mark, 0x20), 224)              // bytes size (padded)</span>
+  38 |     | <span class='unexecuted'>            calldatacopy(add(mark, 0x40), 0, 224)     // bytes payload</span>
+  39 |     | <span class='unexecuted'>            log4(mark, 288,                           // calldata</span>
+  40 |     | <span class='unexecuted'>                 shl(224, shr(224, calldataload(0))), // msg.sig</span>
+  41 |     | <span class='unexecuted'>                 caller,                              // msg.sender</span>
+  42 |     | <span class='unexecuted'>                 calldataload(4),                     // arg1</span>
+  43 |     | <span class='unexecuted'>                 calldataload(36)                     // arg2</span>
+  44 |     | <span class='neutral'>                )</span>
+  45 |     | <span class='neutral'>        }</span>
+  46 |     | <span class='neutral'>    }</span>
+  47 |     | <span class='neutral'>}</span>
+  48 |     | <span class='neutral'></span>
+  49 |     | <span class='neutral'>////// /nix/store/8xb41r4qd0cjb63wcrxf1qmfg88p0961-dss-6fd7de0/src/dai.sol</span>
+  50 |     | <span class='neutral'>// Copyright (C) 2017, 2018, 2019 dbrock, rain, mrchico</span>
+  51 |     | <span class='neutral'></span>
+  52 |     | <span class='neutral'>// This program is free software: you can redistribute it and/or modify</span>
+  53 |     | <span class='neutral'>// it under the terms of the GNU Affero General Public License as published by</span>
+  54 |     | <span class='neutral'>// the Free Software Foundation, either version 3 of the License, or</span>
+  55 |     | <span class='neutral'>// (at your option) any later version.</span>
+  56 |     | <span class='neutral'>//</span>
+  57 |     | <span class='neutral'>// This program is distributed in the hope that it will be useful,</span>
+  58 |     | <span class='neutral'>// but WITHOUT ANY WARRANTY; without even the implied warranty of</span>
+  59 |     | <span class='neutral'>// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the</span>
+  60 |     | <span class='neutral'>// GNU Affero General Public License for more details.</span>
+  61 |     | <span class='neutral'>//</span>
+  62 |     | <span class='neutral'>// You should have received a copy of the GNU Affero General Public License</span>
+  63 |     | <span class='neutral'>// along with this program.  If not, see &lt;https://www.gnu.org/licenses/&gt;.</span>
+  64 |     | <span class='neutral'></span>
+  65 |     | <span class='neutral'>/* pragma solidity 0.5.12; */</span>
+  66 |     | <span class='neutral'></span>
+  67 |     | <span class='neutral'>/* import &quot;./lib.sol&quot;; */</span>
+  68 |     | <span class='neutral'></span>
+  69 | *   | <span class='executed'>contract Dai is LibNote {</span>
+  70 |     | <span class='neutral'>    // --- Auth ---</span>
+  71 |     | <span class='unexecuted'>    mapping (address =&gt; uint) public wards;</span>
+  72 |     | <span class='unexecuted'>    function rely(address guy) external note auth { wards[guy] = 1; }</span>
+  73 |     | <span class='unexecuted'>    function deny(address guy) external note auth { wards[guy] = 0; }</span>
+  74 |     | <span class='neutral'>    modifier auth {</span>
+  75 |     | <span class='unexecuted'>        require(wards[msg.sender] == 1, &quot;Dai/not-authorized&quot;);</span>
+  76 |     | <span class='neutral'>        _;</span>
+  77 |     | <span class='neutral'>    }</span>
+  78 |     | <span class='neutral'></span>
+  79 |     | <span class='neutral'>    // --- ERC20 Data ---</span>
+  80 |     | <span class='unexecuted'>    string  public constant name     = &quot;Dai Stablecoin&quot;;</span>
+  81 |     | <span class='unexecuted'>    string  public constant symbol   = &quot;DAI&quot;;</span>
+  82 |     | <span class='unexecuted'>    string  public constant version  = &quot;1&quot;;</span>
+  83 |     | <span class='unexecuted'>    uint8   public constant decimals = 18;</span>
+  84 |     | <span class='unexecuted'>    uint256 public totalSupply;</span>
+  85 |     | <span class='neutral'></span>
+  86 | *   | <span class='executed'>    mapping (address =&gt; uint)                      public balanceOf;</span>
+  87 |     | <span class='unexecuted'>    mapping (address =&gt; mapping (address =&gt; uint)) public allowance;</span>
+  88 |     | <span class='unexecuted'>    mapping (address =&gt; uint)                      public nonces;</span>
+  89 |     | <span class='neutral'></span>
+  90 |     | <span class='neutral'>    event Approval(address indexed src, address indexed guy, uint wad);</span>
+  91 |     | <span class='neutral'>    event Transfer(address indexed src, address indexed dst, uint wad);</span>
+  92 |     | <span class='neutral'></span>
+  93 |     | <span class='neutral'>    // --- Math ---</span>
+  94 |     | <span class='unexecuted'>    function add(uint x, uint y) internal pure returns (uint z) {</span>
+  95 |     | <span class='unexecuted'>        require((z = x + y) &gt;= x);</span>
+  96 |     | <span class='neutral'>    }</span>
+  97 |     | <span class='unexecuted'>    function sub(uint x, uint y) internal pure returns (uint z) {</span>
+  98 |     | <span class='unexecuted'>        require((z = x - y) &lt;= x);</span>
+  99 |     | <span class='neutral'>    }</span>
+ 100 |     | <span class='neutral'></span>
+ 101 |     | <span class='neutral'>    // --- EIP712 niceties ---</span>
+ 102 |     | <span class='unexecuted'>    bytes32 public DOMAIN_SEPARATOR;</span>
+ 103 |     | <span class='neutral'>    // bytes32 public constant PERMIT_TYPEHASH = keccak256(&quot;Permit(address holder,address spender,uint256 nonce,uint256 expiry,bool allowed)&quot;);</span>
+ 104 |     | <span class='unexecuted'>    bytes32 public constant PERMIT_TYPEHASH = 0xea2aa0a1be11a07ed86d755c93467f4f82362b452371d1ba94d1715123511acb;</span>
+ 105 |     | <span class='neutral'></span>
+ 106 |     | <span class='neutral'>    constructor(uint256 chainId_) public {</span>
+ 107 |     | <span class='neutral'>        wards[msg.sender] = 1;</span>
+ 108 |     | <span class='neutral'>        DOMAIN_SEPARATOR = keccak256(abi.encode(</span>
+ 109 |     | <span class='neutral'>            keccak256(&quot;EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)&quot;),</span>
+ 110 |     | <span class='neutral'>            keccak256(bytes(name)),</span>
+ 111 |     | <span class='neutral'>            keccak256(bytes(version)),</span>
+ 112 |     | <span class='neutral'>            chainId_,</span>
+ 113 |     | <span class='neutral'>            address(this)</span>
+ 114 |     | <span class='neutral'>        ));</span>
+ 115 |     | <span class='neutral'>    }</span>
+ 116 |     | <span class='neutral'></span>
+ 117 |     | <span class='neutral'>    // --- Token ---</span>
+ 118 |     | <span class='unexecuted'>    function transfer(address dst, uint wad) external returns (bool) {</span>
+ 119 |     | <span class='unexecuted'>        return transferFrom(msg.sender, dst, wad);</span>
+ 120 |     | <span class='neutral'>    }</span>
+ 121 |     | <span class='unexecuted'>    function transferFrom(address src, address dst, uint wad)</span>
+ 122 |     | <span class='unexecuted'>        public returns (bool)</span>
+ 123 |     | <span class='neutral'>    {</span>
+ 124 |     | <span class='unexecuted'>        require(balanceOf[src] &gt;= wad, &quot;Dai/insufficient-balance&quot;);</span>
+ 125 |     | <span class='unexecuted'>        if (src != msg.sender &amp;&amp; allowance[src][msg.sender] != uint(-1)) {</span>
+ 126 |     | <span class='unexecuted'>            require(allowance[src][msg.sender] &gt;= wad, &quot;Dai/insufficient-allowance&quot;);</span>
+ 127 |     | <span class='unexecuted'>            allowance[src][msg.sender] = sub(allowance[src][msg.sender], wad);</span>
+ 128 |     | <span class='neutral'>        }</span>
+ 129 |     | <span class='unexecuted'>        balanceOf[src] = sub(balanceOf[src], wad);</span>
+ 130 |     | <span class='unexecuted'>        balanceOf[dst] = add(balanceOf[dst], wad);</span>
+ 131 |     | <span class='unexecuted'>        emit Transfer(src, dst, wad);</span>
+ 132 |     | <span class='unexecuted'>        return true;</span>
+ 133 |     | <span class='neutral'>    }</span>
+ 134 |     | <span class='unexecuted'>    function mint(address usr, uint wad) external auth {</span>
+ 135 |     | <span class='unexecuted'>        balanceOf[usr] = add(balanceOf[usr], wad);</span>
+ 136 |     | <span class='unexecuted'>        totalSupply    = add(totalSupply, wad);</span>
+ 137 |     | <span class='unexecuted'>        emit Transfer(address(0), usr, wad);</span>
+ 138 |     | <span class='neutral'>    }</span>
+ 139 |     | <span class='unexecuted'>    function burn(address usr, uint wad) external {</span>
+ 140 |     | <span class='unexecuted'>        require(balanceOf[usr] &gt;= wad, &quot;Dai/insufficient-balance&quot;);</span>
+ 141 |     | <span class='unexecuted'>        if (usr != msg.sender &amp;&amp; allowance[usr][msg.sender] != uint(-1)) {</span>
+ 142 |     | <span class='unexecuted'>            require(allowance[usr][msg.sender] &gt;= wad, &quot;Dai/insufficient-allowance&quot;);</span>
+ 143 |     | <span class='unexecuted'>            allowance[usr][msg.sender] = sub(allowance[usr][msg.sender], wad);</span>
+ 144 |     | <span class='neutral'>        }</span>
+ 145 |     | <span class='unexecuted'>        balanceOf[usr] = sub(balanceOf[usr], wad);</span>
+ 146 |     | <span class='unexecuted'>        totalSupply    = sub(totalSupply, wad);</span>
+ 147 |     | <span class='unexecuted'>        emit Transfer(usr, address(0), wad);</span>
+ 148 |     | <span class='neutral'>    }</span>
+ 149 | *   | <span class='executed'>    function approve(address usr, uint wad) external returns (bool) {</span>
+ 150 | *   | <span class='executed'>        allowance[msg.sender][usr] = wad;</span>
+ 151 | *   | <span class='executed'>        emit Approval(msg.sender, usr, wad);</span>
+ 152 | *   | <span class='executed'>        return true;</span>
+ 153 |     | <span class='neutral'>    }</span>
+ 154 |     | <span class='neutral'></span>
+ 155 |     | <span class='neutral'>    // --- Alias ---</span>
+ 156 |     | <span class='unexecuted'>    function push(address usr, uint wad) external {</span>
+ 157 |     | <span class='unexecuted'>        transferFrom(msg.sender, usr, wad);</span>
+ 158 |     | <span class='neutral'>    }</span>
+ 159 |     | <span class='unexecuted'>    function pull(address usr, uint wad) external {</span>
+ 160 |     | <span class='unexecuted'>        transferFrom(usr, msg.sender, wad);</span>
+ 161 |     | <span class='neutral'>    }</span>
+ 162 |     | <span class='unexecuted'>    function move(address src, address dst, uint wad) external {</span>
+ 163 |     | <span class='unexecuted'>        transferFrom(src, dst, wad);</span>
+ 164 |     | <span class='neutral'>    }</span>
+ 165 |     | <span class='neutral'></span>
+ 166 |     | <span class='neutral'>    // --- Approve by signature ---</span>
+ 167 |     | <span class='unexecuted'>    function permit(address holder, address spender, uint256 nonce, uint256 expiry,</span>
+ 168 |     | <span class='neutral'>                    bool allowed, uint8 v, bytes32 r, bytes32 s) external</span>
+ 169 |     | <span class='neutral'>    {</span>
+ 170 |     | <span class='unexecuted'>        bytes32 digest =</span>
+ 171 |     | <span class='unexecuted'>            keccak256(abi.encodePacked(</span>
+ 172 |     | <span class='neutral'>                &quot;\x19\x01&quot;,</span>
+ 173 |     | <span class='unexecuted'>                DOMAIN_SEPARATOR,</span>
+ 174 |     | <span class='unexecuted'>                keccak256(abi.encode(PERMIT_TYPEHASH,</span>
+ 175 |     | <span class='unexecuted'>                                     holder,</span>
+ 176 |     | <span class='unexecuted'>                                     spender,</span>
+ 177 |     | <span class='unexecuted'>                                     nonce,</span>
+ 178 |     | <span class='unexecuted'>                                     expiry,</span>
+ 179 |     | <span class='unexecuted'>                                     allowed))</span>
+ 180 |     | <span class='neutral'>        ));</span>
+ 181 |     | <span class='neutral'></span>
+ 182 |     | <span class='unexecuted'>        require(holder != address(0), &quot;Dai/invalid-address-0&quot;);</span>
+ 183 |     | <span class='unexecuted'>        require(holder == ecrecover(digest, v, r, s), &quot;Dai/invalid-permit&quot;);</span>
+ 184 |     | <span class='unexecuted'>        require(expiry == 0 || now &lt;= expiry, &quot;Dai/permit-expired&quot;);</span>
+ 185 |     | <span class='unexecuted'>        require(nonce == nonces[holder]++, &quot;Dai/invalid-nonce&quot;);</span>
+ 186 |     | <span class='unexecuted'>        uint wad = allowed ? uint(-1) : 0;</span>
+ 187 |     | <span class='unexecuted'>        allowance[holder][spender] = wad;</span>
+ 188 |     | <span class='unexecuted'>        emit Approval(holder, spender, wad);</span>
+ 189 |     | <span class='neutral'>    }</span>
+ 190 |     | <span class='neutral'>}</span>
+
+</code>
+<br />
+

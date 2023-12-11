@@ -1,0 +1,13 @@
+cryticArgs:
+  [
+    "--solc-remaps",
+    "@aave/v3=lib/aave-v3-core/contracts/
+    euler-contracts/=lib/euler-contracts/contracts/",
+  ]
+corpusDir: test/echidna/corpus
+testMode: assertion
+allContracts: false
+stopOnFail: true
+rpcBlock: 16817995
+maxBlockDelay: 0
+workers: 4
