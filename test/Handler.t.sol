@@ -6,6 +6,7 @@ import {IERC20} from "@aave/v3/dependencies/openzeppelin/contracts/IERC20.sol";
 import { Addresses } from "../src/libraries/Addresses.sol";
 import {EToken} from "euler-contracts/modules/EToken.sol";
 import {DToken} from "euler-contracts/modules/DToken.sol";
+import {EulerSimpleLens} from "euler-contracts/views/EulerSimpleLens.sol";
 
 // From lib/euler-contracts/contracts/Constants.sol
 uint constant MAX_SANE_AMOUNT = type(uint112).max;
@@ -15,44 +16,54 @@ contract Handler is Test {
     EToken public eToken;
     DToken public dToken;
     IERC20 public token;
+    EulerSimpleLens public eulerSimpleLens;
 
     constructor (EToken _etoken, DToken _dtoken, IERC20 _token) {
         eToken = _etoken;
         dToken = _dtoken;
         token = _token;
+        eulerSimpleLens = EulerSimpleLens(Addresses.EULER_SIMPLE_LENS);
     }
 
-    function borrowWithLeverageAndDonate(uint256 _amount) public {
-        vm.assume(_amount <= MAX_SANE_AMOUNT);
+    function leverage(uint256 _amount) public {
+        (uint256 collateralValue, uint256 liabilityValue, ) = eulerSimpleLens.getAccountStatus(address(this));
+        // 0.28 is the Euler borrow factor
+        uint256 maxBorrowableAmount = (collateralValue * 28) / 100;
 
-        // convert amount to 18 decimals
-        _amount = _amount * 1e18;
+        uint256 availableForBorrowing = maxBorrowableAmount - liabilityValue;
 
-       // The minBalance is set to 150% of the given _amount.
-        // - 2/3 of the _amount is used for leveraging the position.
-        // - 1/3 of the _amount is used to decrease the dToken balance, effectively repaying part of the debt.
-        uint256 minBalance = _amount * 3 / 2;
+        _amount = bound(_amount, 1, availableForBorrowing);
 
-        // Increase this contract DAI balance
-        deal(address(token), address(this), minBalance);
+        eToken.mint(0, _amount);
 
-        token.approve(Addresses.EULER, minBalance);
+    }
+
+
+
+    function deposit(uint256 _amount) public {
+        _amount = bound(_amount, 0, MAX_SANE_AMOUNT);
+
+        deal(address(token), address(this), _amount);
+
+        token.approve(Addresses.EULER, _amount);
         eToken.deposit(0, _amount);
 
-        // @dev leverage can be a arg
-        uint256 amountLeveraged = _amount * 10;
+    }
 
-        // Leverage eToken
-        eToken.mint(0, amountLeveraged);
+    function repay(uint256 _amount) public {
+        uint256 borrowed = eToken.balanceOf(address(this));
+        _amount = bound(_amount, 0, borrowed);
 
-        // Repay half of the loan decreasing dToken balance
-        dToken.repay(0, _amount / 2);
-
-        // Leverage again
-        eToken.mint(0, amountLeveraged);
-
-        // Donate half of leveraged eToken to reserves
-        eToken.donateToReserves(0, amountLeveraged / 2);
+        dToken.repay(0, _amount);
 
     }
+
+    function donateToReserves(uint256 _amount) public {
+        uint256 eBalance = eToken.balanceOf(address(this));
+        _amount = bound(_amount, 1, eBalance);
+
+        eToken.donateToReserves(0, _amount);
+
+    }
+
 }

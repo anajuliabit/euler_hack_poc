@@ -1,0 +1,8 @@
+[130] anajulia@MacBook> forge t --fork-url $MAINNET_RPC_URL --fork-block-number 16817996 --match-test NeverInsolvent
+[⠔] Compiling...
+No files changed, compilation skipped
+
+Running 1 test for test/Invariant.t.sol:InvariantTest
+[PASS] invariant_NeverInsolvent() (runs: 2000, calls: 30000, reverts: 9022)
+Test result: ok. 1 passed; 0 failed; 0 skipped; finished in 30364.82s
+Ran 1 test suites: 1 tests passed, 0 failed, 0 skipped (1 total tests)
